@@ -143,6 +143,52 @@ started after closing out `barrett_wam` (Barrett WAM arm + BarrettHand) and `pan
    <p align="center"><sub>Stage 3: the twist primitive (amplitude 0.4) rotating the held object
    toward its ~23 degree ceiling over 25 cycles.</sub></p>
 
+4. **Third task: finger-gaiting (release-and-recontact a finger to extend reorientation range)
+   -- tried, a real negative result with a traced cause.** Stage 3 ended with a clear
+   hypothesis: its ~23-25 degree ceiling is a static-friction-cone limit of SIMULTANEOUS-contact
+   motion, and should be breakable by releasing a finger and recontacting it at a fresh position
+   once the object has rotated -- the textbook definition of finger-gaiting.
+
+   **`eval_stage4_finger_gaiting.py`: interleaves twist blocks with a `regrasp_finger` call
+   (release one finger back to open, then re-curl it to the same power-grasp target) between
+   blocks, same total twist-cycle budget as a no-gait control.** Tried gaiting the ring finger
+   (one of the two ACTIVELY twisting fingers), the middle finger (one of the two STATIC anchor
+   fingers), and -- in exploration not kept as a committed script -- recontacting at a
+   deliberately SHIFTED base-joint target rather than the original one. Repeated the regrasp up
+   to 4 times (50 total twist cycles) to rule out "just hadn't gaited enough yet."
+
+   | condition (50 total twist cycles) | final rotation |
+   |---|---|
+   | no gait (control) | 23.4 degrees |
+   | gait ring finger (same target) | 23.9 degrees |
+   | gait middle finger (same target) | 23.8 degrees |
+   | gait ring finger (shifted target, exploration only) | 18.0 degrees (worse) |
+
+   **All three committed conditions converge to within ~0.5 degrees of the SAME ceiling as no
+   gaiting at all -- repeated regrasping does not extend Stage 3's rotation limit.** Root cause:
+   releasing a finger and recurling it back to the exact same joint target doesn't actually
+   reposition its CONTACT POINT on the object by very much (the object barely moves during the
+   brief 3-finger-hold release window), so the "fresh contact" a real gait needs never actually
+   materializes -- confirmed directly that even shifting the recontact target to a different
+   joint angle made things WORSE, not better, since that just moves the finger to a less
+   favorable grip angle rather than a deliberately-planned fresh contact point. A real fix would
+   need to plan WHERE on the object's current surface to recontact (a genuine contact-planning
+   problem), not just blindly reopen-and-reclose a finger -- exactly the kind of problem a
+   learned (RL) controller is suited for and open-loop scripting isn't. Object retention held
+   through every attempt (no drops), so this is a clean "didn't help" result, not a crash.
+
+   <p align="center">
+     <img src="media/stage4_finger_gaiting.gif" width="360">
+   </p>
+   <p align="center"><sub>Stage 4: twist blocks interleaved with ring-finger regrasps (visible
+   release/reclose) -- still converges to the same ~23 degree ceiling as no gaiting at all.</sub></p>
+
+   **This closes out the three tasks from "let's do all them one by one":** grasp stability
+   (Stage 2, a clean positive result), reorientation (Stage 3, a real bounded limit found), and
+   finger-gaiting (Stage 4, a real negative result with the cause traced to naive regrasping not
+   being genuine contact planning). The natural next step, flagged but not started, is a learned
+   policy for the contact-planning problem Stage 4 exposed -- not more hand-scripting.
+
 ## Repository layout
 
 ```
@@ -159,9 +205,12 @@ allegro_hand/
 ├── demo_stage2_grasp.py                   # Stage 2: side-by-side push-response GIF, item 2
 ├── eval_stage3_reorientation.py           # Stage 3: twist-primitive amplitude/cycle sweep, item 3
 ├── demo_stage3_reorientation.py           # Stage 3: rotation-to-ceiling GIF, item 3
+├── eval_stage4_finger_gaiting.py          # Stage 4: regrasp vs no-gait comparison, item 4
+├── demo_stage4_finger_gaiting.py          # Stage 4: visible regrasp attempt GIF, item 4
 ├── media/
 │   ├── stage1_kinematic_sweep.gif
 │   ├── stage2_grasp_stability.gif
-│   └── stage3_reorientation.gif
+│   ├── stage3_reorientation.gif
+│   └── stage4_finger_gaiting.gif
 └── README.md
 ```

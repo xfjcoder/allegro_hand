@@ -104,6 +104,35 @@ def quat_angle_deg(q1, q2):
     return np.degrees(2 * np.arccos(dot))
 
 
+def regrasp_finger(model, data, finger_ctrl_slice, hold_target, release_seconds=0.4,
+                    hold_seconds=0.3):
+    """Stage 4's scripted finger-gaiting attempt: releases one finger (its 4 ctrl indices, e.g.
+    `slice(8, 12)` for the ring finger) back to 0 (open) while the rest of `hold_target` keeps
+    the other fingers' grip, then re-curls that finger back to `hold_target`'s own value for it
+    -- a minimal "let go, recontact" regrasp. Confirmed (see README Stage 4) this does NOT
+    extend Stage 3's twist primitive past its own ~23-25 degree rotation ceiling, however many
+    times it's repeated -- a real negative result, not a missing feature of this helper."""
+    release = hold_target.copy()
+    release[finger_ctrl_slice] = 0.0
+    n = int(release_seconds / model.opt.timestep)
+    start = data.ctrl.copy()
+    for i in range(n):
+        alpha = (i + 1) / n
+        data.ctrl[:] = start + alpha * (release - start)
+        mj.mj_step(model, data)
+    for _ in range(int(hold_seconds / model.opt.timestep)):
+        data.ctrl[:] = release
+        mj.mj_step(model, data)
+    start2 = data.ctrl.copy()
+    for i in range(n):
+        alpha = (i + 1) / n
+        data.ctrl[:] = start2 + alpha * (hold_target - start2)
+        mj.mj_step(model, data)
+    for _ in range(int(hold_seconds / model.opt.timestep)):
+        data.ctrl[:] = hold_target
+        mj.mj_step(model, data)
+
+
 def twist_ctrl(base_ctrl, amp, phase):
     """Stage 3's scripted reorientation primitive: the power grasp's own ctrl target, with the
     first finger's base (ab/adduction) joint (`ffj0`, ctrl index 0) and the ring finger's base

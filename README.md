@@ -58,6 +58,53 @@ started after closing out `barrett_wam` (Barrett WAM arm + BarrettHand) and `pan
    <p align="center"><sub>Stage 1: each of the 16 finger joints swept through its own range, then
    the included object settling into the open hand under gravity.</sub></p>
 
+2. **First task: grasp stability under perturbation, not "lift" -- DONE.** User: "let's do all
+   them one by one" (in-hand reorientation / from-rest grasp-lift / finger-gaiting, offered as
+   the three natural next-task options). Starting with grasp/lift, the simplest of the three --
+   but a literal vertical "lift" doesn't translate to a fixed-base hand with no wrist/arm to
+   raise anything, AND Stage 1 already found the included object falls into a STABLE passive
+   resting equilibrium with the hand fully open (`ctrl=0`) -- the default-open pose's own
+   slight gravity sag forms a shallow basin that already holds the object without any grasp at
+   all. That makes "does the object stay put" a trivial, already-solved null-policy outcome,
+   not a real task to build on.
+
+   **Reframed the task as: does an active grasp retain the object against a perturbation that
+   the passive pose can't?** A real, non-trivial, and directly measurable question. Found a
+   "power grasp" ctrl target (`hand_env.py`'s `POWER_GRASP_TARGET`) via a direct static search
+   over curl fraction / thumb-base angle / finger base-joint spread for the configuration that
+   brings all 4 fingertips closest to the object's center (curl=0.95 of each curl joint's own
+   range, thumb base=1.3 rad, **zero** base-joint spread -- spreading the three fingers'
+   ab/adduction joints in EITHER direction, counter to intuition, only moved their fingertips
+   farther from the object for this pose, not closer).
+
+   **`eval_stage2_grasp_stability.py`: paired comparison (identical random push direction, 8
+   trials per magnitude) of the passive open-hand pose against the power grasp, sweeping push
+   speed injected directly into the object's free-joint velocity:**
+
+   | push magnitude (m/s) | open-hand retained | power-grasp retained |
+   |---|---|---|
+   | 0.6 | 8/8 | 8/8 |
+   | 0.8 | 4/8 | 8/8 |
+   | 1.0 | 0/8 | 8/8 |
+   | 1.2 | 0/8 | 8/8 |
+   | 1.5 | 0/8 | 8/8 |
+   | 2.0 | 0/8 | 8/8 |
+
+   **Clean, reproducible result**: the passive pose's retention collapses from 8/8 to 0/8
+   exactly in the 0.6-1.0 m/s range, while the power grasp retains the object at every tested
+   magnitude up to 2.0 m/s (3x the magnitude that fully breaks the passive pose) -- confirming
+   this is a real, active grasp effect, not just a relabeling of the same passive equilibrium.
+   This is Stage 2's scripted/privileged-state feasibility check (direct `qvel` injection, full
+   state access) -- the reference number a later learned policy (closing fingers from pixels/
+   touch sensing, reacting to a variety of objects/perturbations, not just this one tuned
+   static target) would need to match or beat.
+
+   <p align="center">
+     <img src="media/stage2_grasp_stability.gif" width="500">
+   </p>
+   <p align="center"><sub>Same push (1.0 m/s), identical start state -- left: open-hand pose
+   loses the object; right: power grasp retains it.</sub></p>
+
 ## Repository layout
 
 ```
@@ -69,7 +116,11 @@ allegro_hand/
 │   ├── CHANGELOG.wonik_allegro.md
 │   └── NOTICE.md
 ├── demo_stage1_kinematic_sweep.py         # Stage 1: joint-range sweep + object settle, item 1
+├── hand_env.py                            # shared constants/helpers, item 2
+├── eval_stage2_grasp_stability.py         # Stage 2: open-hand vs power-grasp push sweep, item 2
+├── demo_stage2_grasp.py                   # Stage 2: side-by-side push-response GIF, item 2
 ├── media/
-│   └── stage1_kinematic_sweep.gif
+│   ├── stage1_kinematic_sweep.gif
+│   └── stage2_grasp_stability.gif
 └── README.md
 ```

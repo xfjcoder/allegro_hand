@@ -96,3 +96,27 @@ def object_retained(data, threshold=0.05):
     this project's grasp-stability success criterion (see this module's docstring)."""
     dist = np.linalg.norm(data.body("object").xpos - OBJECT_REST_POS)
     return dist < threshold, dist
+
+
+def quat_angle_deg(q1, q2):
+    """Shortest rotation angle (degrees) between two world-frame quaternions (mjtNum wxyz)."""
+    dot = np.clip(abs(np.dot(q1, q2)), 0.0, 1.0)
+    return np.degrees(2 * np.arccos(dot))
+
+
+def twist_ctrl(base_ctrl, amp, phase):
+    """Stage 3's scripted reorientation primitive: the power grasp's own ctrl target, with the
+    first finger's base (ab/adduction) joint (`ffj0`, ctrl index 0) and the ring finger's base
+    joint (`rfj0`, index 8) driven sinusoidally in OPPOSITE directions -- found empirically (see
+    README Stage 3) to induce a real but BOUNDED object rotation. A first few oscillation cycles
+    can look like it's still climbing (don't stop early and call it "saturated" -- confirmed
+    directly that a too-short sweep at amp=0.4 looked like unbounded linear growth through 20
+    cycles before actually flattening by 50), but it reliably converges to a hard ceiling around
+    ~23-25 degrees for amp>=0.3, independent of amplitude (even the joint's own max range, 0.47,
+    converges to the same ~23.5 degree ceiling) -- a static-friction-cone limit of simultaneous-
+    contact motion, not unbounded reorientation. Arbitrary/large-angle reorientation needs
+    finger-gaiting (releasing and re-contacting at new positions), Stage 4's topic."""
+    c = base_ctrl.copy()
+    c[0] = amp * np.sin(phase)
+    c[8] = -amp * np.sin(phase)
+    return c

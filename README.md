@@ -105,6 +105,44 @@ started after closing out `barrett_wam` (Barrett WAM arm + BarrettHand) and `pan
    <p align="center"><sub>Same push (1.0 m/s), identical start state -- left: open-hand pose
    loses the object; right: power grasp retains it.</sub></p>
 
+3. **Second task: in-hand reorientation via simultaneous finger motion only -- DONE, a real
+   bounded limit found.** From the Stage 2 power grasp, oscillate two opposing fingers' base
+   (ab/adduction) joints (`ffj0`/`rfj0`) in antiphase (`hand_env.py`'s `twist_ctrl`) and measure
+   the object's cumulative rotation (quaternion angle from its grasped starting orientation).
+
+   **Caught a real mistake before reporting it, not after**: a first sweep at only 6-20
+   oscillation cycles made amplitude 0.4 look like unbounded, continuously-accumulating rotation
+   (still climbing ~0.8 degrees/cycle with no sign of flattening at cycle 20) -- which would have
+   meant simultaneous finger motion alone is enough for arbitrary reorientation, no finger-gaiting
+   needed. Ran it out to 50 cycles before writing that down, and it DOES flatten -- just much
+   later, and to a much higher ceiling (~23 degrees, not ~8) than the low-amplitude runs showed.
+   `eval_stage3_reorientation.py` defaults to 50 cycles for exactly this reason.
+
+   | oscillation amplitude | rotation @ cycle 25 | rotation @ cycle 50 | retained every cycle |
+   |---|---|---|---|
+   | 0.1 | 11.0deg | 14.5deg (still rising) | yes |
+   | 0.2 | 11.0deg | 10.7deg (plateaued) | yes |
+   | 0.3 | 14.7deg | 22.2deg | yes |
+   | 0.4 | 22.8deg | 23.4deg (flat) | yes |
+   | 0.47 (joint's own max range) | 23.3deg | 23.5deg (flat) | yes |
+
+   **Finding: this primitive has a hard rotation ceiling around ~23-25 degrees, independent of
+   oscillation amplitude** -- even driving the joint to its own maximum range (0.47) converges to
+   the same ~23.5 degree bound as amplitude 0.4, not further. This is a static-friction-cone limit
+   of simultaneous-contact motion (the grasped contact points can only "stick-slip" so far before
+   the geometry runs out of room to advance further under this specific motion), not a tunable
+   parameter -- confirms that genuinely large-angle or arbitrary in-hand reorientation needs
+   finger-GAITING (releasing and re-contacting at new positions), not just richer simultaneous
+   finger motion. Object retention held at every amplitude and cycle count tested -- this bounded
+   twist never risks dropping the object, unlike what a full re-gaiting controller will have to
+   manage.
+
+   <p align="center">
+     <img src="media/stage3_reorientation.gif" width="360">
+   </p>
+   <p align="center"><sub>Stage 3: the twist primitive (amplitude 0.4) rotating the held object
+   toward its ~23 degree ceiling over 25 cycles.</sub></p>
+
 ## Repository layout
 
 ```
@@ -119,8 +157,11 @@ allegro_hand/
 ├── hand_env.py                            # shared constants/helpers, item 2
 ├── eval_stage2_grasp_stability.py         # Stage 2: open-hand vs power-grasp push sweep, item 2
 ├── demo_stage2_grasp.py                   # Stage 2: side-by-side push-response GIF, item 2
+├── eval_stage3_reorientation.py           # Stage 3: twist-primitive amplitude/cycle sweep, item 3
+├── demo_stage3_reorientation.py           # Stage 3: rotation-to-ceiling GIF, item 3
 ├── media/
 │   ├── stage1_kinematic_sweep.gif
-│   └── stage2_grasp_stability.gif
+│   ├── stage2_grasp_stability.gif
+│   └── stage3_reorientation.gif
 └── README.md
 ```

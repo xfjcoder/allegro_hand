@@ -306,12 +306,50 @@ started after closing out `barrett_wam` (Barrett WAM arm + BarrettHand) and `pan
    but wasn't pursued here -- four attempts of honestly-chased exploits is a reasonable stopping
    point for this session rather than continuing indefinitely.
 
+6. **Stage 6: Baoding balls -- two balls orbiting each other in one hand.** User: "can we rotate
+   two round balls within hand" -- the classic two-ball dexterous-manipulation exercise, a
+   meaningfully different and harder problem than Stages 2-5's single object (needs the pair to
+   actually CIRCULATE around each other, not just rotate in place).
+
+   **Scene (`assets/scene_two_balls.xml`):** two 0.015m-radius spheres (half the single-object
+   scene's ellipsoid scale, so a pair has room to sit side by side) spawned offset +-0.018m in y.
+   Verified settling (open hand: both land stably at z~0.026m, 0.037m apart, no interpenetration)
+   and grasp retention (the existing Stage 2 `POWER_GRASP_TARGET`, tuned for one object, holds
+   both balls with barely any displacement from rest) before building anything further on it --
+   same vendor-then-verify discipline as every other stage's first item.
+
+   **Scripted feasibility check (`eval_stage6_baoding_balls.py`), two candidates, both negative:**
+   reusing Stage 3's `twist_ctrl` as-is produces essentially nothing (-1.4 degrees of cumulative
+   orbit over 30 cycles -- noise). A new candidate, `orbit_wave_ctrl` (a 120-degree phase-shifted
+   traveling wave across the three non-thumb fingers' curl joints, designed specifically to try to
+   "paddle" the balls around the palm), does something real but still falls well short: a short
+   sweep looked promising (28.6 degrees by cycle 2) -- caught the same "don't judge early" trap
+   Stage 3 flagged, extended to 30 cycles, and it settles into a small BOUNDED repositioning
+   (~-15.5 degrees) by cycle ~15, not sustained orbiting. Both balls stayed retained throughout
+   every test (no drops). Same qualitative shape as Stage 3's own single-object finding: simultaneous/
+   simple scripted motion can perturb the configuration, but not drive continuous circulation.
+
+   <p align="center">
+     <img src="media/stage6_baoding_balls.gif" width="360">
+   </p>
+   <p align="center"><sub>Stage 6: `orbit_wave_ctrl`'s traveling-wave attempt -- a real but
+   bounded repositioning, not sustained orbiting.</sub></p>
+
+   **Not yet attempted: RL.** Stage 5's precedent (Stage 4's scripted gaiting also failed, and a
+   learned controller found a real, if imperfect, improvement) suggests the same escalation path
+   would apply here -- but training a two-ball orbiting policy is a bigger lift than Stage 5's
+   single-object one (reward needs a sustained circulation signal, which based on Stage 5's
+   history is exactly the kind of metric prone to reward-hacking, likely worse with two
+   objects' worth of position/contact state to game). Flagged, not started without checking in
+   first given the scope.
+
 ## Repository layout
 
 ```
 allegro_hand/
 ├── assets/
 │   ├── right_hand.xml, scene_right.xml   # vendored from mujoco_menagerie, see NOTICE.md
+│   ├── scene_two_balls.xml               # Stage 6: right_hand.xml + two spheres, item 6
 │   ├── assets/                           # meshes the above MJCF references
 │   ├── LICENSE.wonik_allegro
 │   ├── CHANGELOG.wonik_allegro.md
@@ -328,11 +366,14 @@ allegro_hand/
 ├── train_stage5_gaiting_rl.py             # Stage 5: PPO training script, item 5
 ├── eval_stage5_gaiting_rl.py              # Stage 5: long-horizon rollout + ceiling comparison, item 5
 ├── demo_stage5_gaiting_rl.py              # Stage 5: trained-policy rollout GIF, item 5
+├── eval_stage6_baoding_balls.py           # Stage 6: scripted orbit-primitive feasibility check, item 6
+├── demo_stage6_baoding_balls.py           # Stage 6: traveling-wave attempt GIF, item 6
 ├── media/
 │   ├── stage1_kinematic_sweep.gif
 │   ├── stage2_grasp_stability.gif
 │   ├── stage3_reorientation.gif
 │   ├── stage4_finger_gaiting.gif
-│   └── stage5_gaiting_rl.gif
+│   ├── stage5_gaiting_rl.gif
+│   └── stage6_baoding_balls.gif
 └── README.md
 ```

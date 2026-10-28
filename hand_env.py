@@ -27,6 +27,35 @@ THUMB_CURL_RANGES = {1: (-0.105, 1.163), 2: (-0.189, 1.644), 3: (-0.162, 1.719)}
 THUMB_BASE_RANGE = (0.263, 1.396)
 OBJECT_REST_POS = np.array([0.0, 0.0, 0.03])  # Stage 1's measured passive-settle position
 
+# Stage 6: assets/scene_two_balls.xml -- two 0.015m-radius spheres (half the single-object
+# scene's ellipsoid scale) spawned offset +-0.018m in y so they land side by side without
+# interpenetrating, instead of the single centered ellipsoid the scenes above use.
+TWO_BALL_SCENE = "assets/scene_two_balls.xml"
+# Measured directly (same discipline as OBJECT_REST_POS): open-hand passive settle position for
+# each ball, used as this pair's own retention reference.
+BALL_REST_POS = {
+    "ball1": np.array([0.0, -0.0185, 0.0257]),
+    "ball2": np.array([0.0, 0.0185, 0.0257]),
+}
+
+
+def balls_retained(data, threshold=0.05):
+    """Same role as object_retained, but for the two-ball scene -- both balls must stay within
+    `threshold` of their OWN measured rest position. Returns (both_retained, per-ball distances)."""
+    dists = {name: np.linalg.norm(data.body(name).xpos - rest)
+             for name, rest in BALL_REST_POS.items()}
+    return all(d < threshold for d in dists.values()), dists
+
+
+def ball_pair_angle_rad(data):
+    """Angle (world XY plane) of the vector from ball1 to ball2 -- this project's orbit metric:
+    sustained CHANGE in this angle over time means the pair is actually circulating around each
+    other (real Baoding-ball motion), not just jittering in place. Unwrap/accumulate step-to-step
+    deltas the same way Stage 5 accumulates `twist_angle_rad`, for the same reason (a raw angle
+    alone can't distinguish one full orbit from zero)."""
+    v = data.body("ball2").xpos - data.body("ball1").xpos
+    return np.arctan2(v[1], v[0])
+
 
 def make_grasp_target(curl_frac, thumb_base, base_spread=0.0):
     """Builds a 16-dim ctrl target: ff/mf/rf's 3 curl joints (proximal/medial/distal) set to
@@ -220,4 +249,21 @@ def twist_ctrl(base_ctrl, amp, phase):
     c = base_ctrl.copy()
     c[0] = amp * np.sin(phase)
     c[8] = -amp * np.sin(phase)
+    return c
+
+
+def orbit_wave_ctrl(base_ctrl, amp, phase):
+    """Stage 6's first scripted attempt at orbiting the two-ball pair: a traveling wave of curl
+    amplitude across the three non-thumb fingers' proximal joints (120 degrees of phase offset
+    between ff/mf/rf), intended to act like a rotating paddle that sequentially nudges the balls
+    around the palm. **Confirmed NOT to produce sustained orbiting** (see README Stage 6) -- the
+    ball-pair angle (`ball_pair_angle_rad`) shifts a few degrees on the first cycle and then
+    flatlines, same qualitative failure as reusing `twist_ctrl` directly on this scene. Kept as a
+    documented negative result, not deleted, same as `regrasp_finger`'s Stage 4 role."""
+    c = base_ctrl.copy()
+    for f, offset in enumerate((0.0, 2 * np.pi / 3, 4 * np.pi / 3)):
+        idx = f * 4 + 1  # proximal curl joint within this finger's 4-joint group
+        lo, hi = FINGER_CURL_RANGES[1]
+        mod = amp * np.sin(phase + offset)
+        c[idx] = np.clip(base_ctrl[idx] + mod * (hi - lo), lo, hi)
     return c

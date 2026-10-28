@@ -21,13 +21,22 @@
     <!-- Baoding-ball pair: half the single-object scene's ellipsoid scale (0.015m radius vs its
          0.02-0.04m semi-axes) so two of them have room to sit side by side in the same palm
          cage, offset +-0.018m in y at spawn so they don't start interpenetrating. -->
+    <!-- Each ball's marker dot (contype=0/conaffinity=0, no collision -- it's purely visual) is
+         listed FIRST, before the real collision sphere -- hand_env._collision_geom_id assumes
+         "visual geom(s) first, collision geom last" (the same convention right_hand.xml's own
+         mesh+capsule pairs use), so this ordering keeps fingertip_contact_count working
+         unmodified. Without a marker a plain-colored sphere's spin is invisible in a render even
+         when it's really happening (see README Stage 6) -- this is what made the ball-vs-ball
+         rolling-spin finding visually verifiable at all. -->
     <body name="ball1" pos="0 -0.018 0.1">
       <freejoint/>
+      <geom type="sphere" size="0.004" pos="0.012 0 0" rgba="1 1 1 1" contype="0" conaffinity="0"/>
       <geom type="sphere" size="0.015" rgba="0.8 0.3 0.3 1" condim="6" priority="1"
         friction="0.7 0.002 0.002"/>
     </body>
     <body name="ball2" pos="0 0.018 0.1">
       <freejoint/>
+      <geom type="sphere" size="0.004" pos="0.012 0 0" rgba="1 1 1 1" contype="0" conaffinity="0"/>
       <geom type="sphere" size="0.015" rgba="0.3 0.3 0.8 1" condim="6" priority="1"
         friction="0.7 0.002 0.002"/>
     </body>

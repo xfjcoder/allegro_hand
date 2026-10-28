@@ -85,6 +85,21 @@ def make_grasp_target(curl_frac, thumb_base, base_spread=0.0):
 # baseline and by the RL action space's own anchor/reference pose.
 POWER_GRASP_TARGET = make_grasp_target(curl_frac=0.95, thumb_base=1.3, base_spread=0.0)
 
+# Stage 6: POWER_GRASP_TARGET was tuned for ONE centered object and holds the two-ball pair
+# badly -- checked directly: ball1 gets ZERO fingertip contact under it (only touches the palm),
+# ball2 gets 1. Found this instead via the same static curl_frac/spread search, scored on total
+# hand-ball contact count for BOTH balls (not just one): same curl_frac=0.95, but base_spread=0.5
+# (vs. 0.0 -- a WIDER spread is needed to reach two side-by-side balls instead of one centered
+# one) gives ball1=1, ball2=2 fingertip contacts with both well retained (<0.01m from rest).
+BAODING_GRASP_TARGET = make_grasp_target(curl_frac=0.95, thumb_base=1.3, base_spread=0.5)
+MIN_BALL_SEPARATION = 0.025  # meters -- below the balls' own 0.03m diameter would mean overlap
+MAX_BALL_SEPARATION = 0.065  # meters -- natural range under grasp+scripted motion was 0.037-0.050
+
+
+def ball_separation_ok(data):
+    dist = np.linalg.norm(data.body("ball1").xpos - data.body("ball2").xpos)
+    return MIN_BALL_SEPARATION <= dist <= MAX_BALL_SEPARATION, dist
+
 
 def settle_object(model, data, settle_seconds=1.0):
     """Holds the hand open (ctrl=0) for settle_seconds so the included free-floating object
@@ -146,14 +161,14 @@ def _collision_geom_id(model, body_name):
     return start + (1 if num > 1 else 0)
 
 
-def fingertip_contact_count(model, data, object_geom_id=None):
-    """Number of DISTINCT fingertips (0-4) currently in contact with the object -- a real
+def fingertip_contact_count(model, data, object_geom_id=None, object_body_name="object"):
+    """Number of DISTINCT fingertips (0-4) currently in contact with `object_body_name` -- a real
     multi-finger-grip signal, unlike `object_retained`'s position-only check (see its docstring
-    for why that alone isn't enough once the policy can reshape the hand itself)."""
+    for why that alone isn't enough once the policy can reshape the hand itself). Takes an
+    explicit body name (not hardcoded to Stage 2-5's single "object") so Stage 6's two-ball scene
+    can call this once per ball."""
     if object_geom_id is None:
-        object_geom_id = _collision_geom_id(model, "object") if model.body_geomnum[
-            mj.mj_name2id(model, mj.mjtObj.mjOBJ_BODY, "object")] > 1 else \
-            model.body_geomadr[mj.mj_name2id(model, mj.mjtObj.mjOBJ_BODY, "object")]
+        object_geom_id = _collision_geom_id(model, object_body_name)
     tip_geom_ids = {_collision_geom_id(model, name) for name in FINGERTIP_BODY_NAMES}
     touching = set()
     for i in range(data.ncon):

@@ -335,13 +335,64 @@ started after closing out `barrett_wam` (Barrett WAM arm + BarrettHand) and `pan
    <p align="center"><sub>Stage 6: `orbit_wave_ctrl`'s traveling-wave attempt -- a real but
    bounded repositioning, not sustained orbiting.</sub></p>
 
-   **Not yet attempted: RL.** Stage 5's precedent (Stage 4's scripted gaiting also failed, and a
-   learned controller found a real, if imperfect, improvement) suggests the same escalation path
-   would apply here -- but training a two-ball orbiting policy is a bigger lift than Stage 5's
-   single-object one (reward needs a sustained circulation signal, which based on Stage 5's
-   history is exactly the kind of metric prone to reward-hacking, likely worse with two
-   objects' worth of position/contact state to game). Flagged, not started without checking in
-   first given the scope.
+   **RL attempt (`baoding01`), user: "try 1, before that make .gif show ball motion"** -- fixed
+   the demo camera first (the original side-on angle, reused from Stages 1-5, left the balls
+   almost entirely hidden behind the fingers; switched to a closer, steeper overhead angle).
+   Trained `BaodingEnv` (`rl_env_baoding.py`) with every Stage-5-learned safeguard applied
+   PROACTIVELY from the start (per-ball position retention, per-ball+combined fingertip contact
+   minimums, an orbit-rate cap, a ball-separation bound, and an active-finger-motion reward gate)
+   -- rather than discovering each one reactively the way Stage 5 did. First readout looked like
+   real progress: 55 degrees of cumulative "orbit" over 7.6 seconds before failing. Rendering the
+   rollout before trusting it (same discipline, again) showed ball1 being gradually squeezed and
+   pushed SIDEWAYS out of the grip, not circling ball2 -- separation drifted smoothly from 0.039m
+   to 0.053m, comfortably inside the absolute [0.025, 0.065] bound that was supposed to catch
+   exactly this. **New lesson, Stage-6-specific**: an absolute separation band doesn't catch
+   gradual one-directional drift, only being flung clean out of range. Fixed by bounding drift
+   from each episode's OWN starting separation instead (`MAX_SEPARATION_DRIFT = 0.012m`,
+   calibrated against the scripted primitive's own natural 0.012m of wobble) -- `baoding02`
+   training with this fix.
+
+   **User's question, mid-training: "if two balls rotate against each other with finger force,
+   will that make it easy?"** -- a different mechanical framing: not CIRCULATING the pair around
+   a shared center (hard -- needs genuine positional travel across the whole palm, which is what
+   kept failing above), but SPINNING each ball on its own axis via mutual rolling contact, like
+   two meshing gears, while they stay roughly in place. Tested directly, scripted, no RL:
+   retargeting Stage 3's own unmodified `twist_ctrl` primitive at a new wider-spread grasp
+   (`BAODING_GRASP_TARGET`, found the same way `POWER_GRASP_TARGET` was -- a static curl/spread
+   search, needed because the single-object power grasp gets ZERO fingertip contact on ball1)
+   makes the two balls spin in OPPOSITE directions -- exactly what rolling-without-slipping
+   contact between them predicts -- at a **constant, non-saturating rate** (`eval_stage6_ball_spin.py`):
+
+   | cycles (at amp=0.4) | ball1 spin | ball2 spin | separation |
+   |---|---|---|---|
+   | 20 | -34.7 deg | 36.4 deg | 0.041m (unchanged) |
+   | 50 | -58.8 deg | 55.1 deg | 0.041m (unchanged) |
+   | 80 | -162.0 deg | 118.3 deg | 0.041m (unchanged) |
+
+   Per-10-cycle rate stays within 0.2 degrees of ~21.2 degrees/10-cycles across the ENTIRE 80-cycle
+   (160 second) run -- no curvature, no sign of the saturation every other primitive in this
+   project hits. Mechanical reason this is different: Stage 3's ~23-25 degree ceiling came from a
+   static-friction-cone limit on REPOSITIONING a single grasped object under simultaneous contact;
+   a sphere rolling against another sphere under sustained contact has no such limit on the
+   rotation itself. Both balls stayed retained throughout, zero drops. Added visible white marker
+   dots to each ball (`assets/scene_two_balls.xml`, contype=0/conaffinity=0 so they don't affect
+   physics) specifically so this spin is actually checkable by eye, not just by the quaternion math
+   -- a plain-colored sphere's rotation is otherwise invisible in a render.
+
+   <p align="center">
+     <img src="media/stage6_ball_spin.gif" width="360">
+   </p>
+   <p align="center"><sub>Stage 6: the two balls spinning against each other via mutual rolling
+   contact (marker dots visible on each ball) -- Stage 3's own primitive, unmodified, just
+   retargeted at a wider grasp. No RL needed.</sub></p>
+
+   **Answer to the user's question: yes, meaningfully easier** -- scripted, first try, no
+   saturation, no exploit-chasing required, because it sidesteps the actual hard part (positional
+   travel across the palm) entirely. It's a genuinely different skill from "orbiting" in the
+   classic Baoding-ball sense (the balls don't trade positions), but it's real, sustained,
+   bidirectional rotation driven by ordinary finger force -- which is what was actually asked.
+   `baoding02` (the circulation-framing RL run) continued in parallel for completeness; see below
+   for its outcome.
 
 ## Repository layout
 
@@ -368,12 +419,19 @@ allegro_hand/
 ├── demo_stage5_gaiting_rl.py              # Stage 5: trained-policy rollout GIF, item 5
 ├── eval_stage6_baoding_balls.py           # Stage 6: scripted orbit-primitive feasibility check, item 6
 ├── demo_stage6_baoding_balls.py           # Stage 6: traveling-wave attempt GIF, item 6
+├── rl_env_baoding.py                      # Stage 6: BaodingEnv (RL env), item 6
+├── train_stage6_baoding_rl.py             # Stage 6: PPO training script, item 6
+├── eval_stage6_baoding_rl.py              # Stage 6: RL orbit-circulation rollout eval, item 6
+├── demo_stage6_baoding_rl.py              # Stage 6: RL orbit-circulation rollout GIF, item 6
+├── eval_stage6_ball_spin.py               # Stage 6: ball-vs-ball rolling-spin eval, item 6
+├── demo_stage6_ball_spin.py               # Stage 6: ball-vs-ball rolling-spin GIF, item 6
 ├── media/
 │   ├── stage1_kinematic_sweep.gif
 │   ├── stage2_grasp_stability.gif
 │   ├── stage3_reorientation.gif
 │   ├── stage4_finger_gaiting.gif
 │   ├── stage5_gaiting_rl.gif
-│   └── stage6_baoding_balls.gif
+│   ├── stage6_baoding_balls.gif
+│   └── stage6_ball_spin.gif
 └── README.md
 ```

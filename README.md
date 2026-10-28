@@ -490,7 +490,10 @@ started after closing out `barrett_wam` (Barrett WAM arm + BarrettHand) and `pan
      <img src="media/stage6_baoding_rl_v2.gif" width="360">
    </p>
    <p align="center"><sub>`baoding_v2_02`: genuine ~144 degrees of circulation (balls visibly swap
-   from side-by-side to stacked), then a stable hold rather than continuing.</sub></p>
+   from side-by-side to stacked), then a stable hold rather than continuing. Re-rendered at
+   real-time playback (100ms/frame, matching frame_stride*CONTROL_DT) -- the original export
+   hardcoded 40ms/frame regardless of sim-time-per-frame, so it played back 2.5x faster than the
+   policy's actual pace.</sub></p>
 
    **Where this stands now**: both approaches made real, visually-confirmed progress on the
    larger balls -- the biggest genuine circulation achieved in this entire stage (144 degrees,

@@ -1,6 +1,11 @@
 """Renders a Stage 6 BaodingEnvV2 rollout (larger balls, milestone-bonus reward -- see
 rl_env_baoding_v2.py). Same "GIF for every notable attempt" convention as every other stage.
 
+Defaults to real-time GIF playback (duration-ms = frame_stride*CONTROL_DT*1000). User, after
+reading the README: "found baoding_v2_02.gif did do classic baoding, though little too fast" --
+the original render hardcoded duration=40ms/frame regardless of how much sim-time each saved
+frame actually spanned, which played back 2.5x faster than the policy's real pace.
+
 Usage:
     python3 demo_stage6_baoding_rl_v2.py --run-name baoding_v2_01 --seconds 20 --record media/stage6_baoding_rl_v2.gif
 """
@@ -24,7 +29,16 @@ def main():
     ap.add_argument("--seconds", type=float, default=20.0)
     ap.add_argument("--record", type=str, default=None)
     ap.add_argument("--frame-stride", type=int, default=5)
+    ap.add_argument("--duration-ms", type=int, default=None,
+                     help="GIF ms-per-frame. Defaults to frame_stride*CONTROL_DT*1000 (real-time "
+                          "playback) -- the previous hardcoded 40ms/frame played back 2.5x faster "
+                          "than the policy's actual pace (100ms of sim time per saved frame, "
+                          "displayed for 40ms), which is what made baoding_v2_02's GIF look "
+                          "'a little too fast' instead of a normal human Baoding-ball cadence.")
     args = ap.parse_args()
+    duration_ms = args.duration_ms
+    if duration_ms is None:
+        duration_ms = round(args.frame_stride * CONTROL_DT * 1000)
 
     run_dir = Path(__file__).parent / "runs" / args.run_name
     if args.steps is not None:
@@ -76,8 +90,9 @@ def main():
     if args.record:
         Path(args.record).parent.mkdir(parents=True, exist_ok=True)
         imgs = [Image.fromarray(f) for f in frames]
-        imgs[0].save(args.record, save_all=True, append_images=imgs[1:], duration=40, loop=0)
-        print(f"Saved {len(frames)} frames to {args.record}")
+        imgs[0].save(args.record, save_all=True, append_images=imgs[1:], duration=duration_ms,
+                     loop=0)
+        print(f"Saved {len(frames)} frames to {args.record} at {duration_ms}ms/frame")
 
     renderer.close()
 

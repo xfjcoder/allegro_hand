@@ -386,13 +386,55 @@ started after closing out `barrett_wam` (Barrett WAM arm + BarrettHand) and `pan
    contact (marker dots visible on each ball) -- Stage 3's own primitive, unmodified, just
    retargeted at a wider grasp. No RL needed.</sub></p>
 
-   **Answer to the user's question: yes, meaningfully easier** -- scripted, first try, no
-   saturation, no exploit-chasing required, because it sidesteps the actual hard part (positional
-   travel across the palm) entirely. It's a genuinely different skill from "orbiting" in the
-   classic Baoding-ball sense (the balls don't trade positions), but it's real, sustained,
-   bidirectional rotation driven by ordinary finger force -- which is what was actually asked.
-   `baoding02` (the circulation-framing RL run) continued in parallel for completeness; see below
-   for its outcome.
+   This is a genuinely different skill from classic Baoding-ball orbiting (the balls don't trade
+   positions, they each just spin in place), easier because it sidesteps the actual hard part
+   (positional travel across the palm) entirely. **User clarified: "i mean two balls rotate
+   across each other and exchange positions continuously"** -- i.e. they did mean real
+   circulation, not this spin-in-place result. Back to the harder framing.
+
+   **`baoding02` result (the separation-drift-fixed RL run): a real, non-exploited partial shift,
+   but still not continuous circulation.** No drift/contact/rate violations this time (confirmed
+   not another disguised exploit). ~41 degrees of genuine active-motion-driven rotation achieved
+   within the first 1.6 seconds, then the hand goes essentially static (visually confirmed --
+   frames at t=4s and t=9.8s are indistinguishable) and the accumulated angle slowly DECAYS back
+   toward 0 over the next ~18 seconds (41.5 -> 28.4 degrees) as the perturbed configuration
+   relaxes back toward its rest state. One modest one-time reconfiguration, not a repeating cycle
+   -- the same "quick burst, then nothing" shape Stage 5's `gait03` hit, just without an exploit
+   this time: the reward structure rewards ANY net angle progress per step, so a single ~41
+   degree shift satisfies it just as well as genuine repeated circulation would, up to that
+   magnitude. Getting real continuous circulation would need the reward redesigned around
+   completing full revolutions (or a sustained long-horizon rate), not net angle per step.
+
+   **Follow-up test, user: "the current baoding .gif show two are separated with distance, no
+   contact, no push each other"** -- correct, and a sharp diagnosis. `BAODING_GRASP_TARGET`'s
+   ball-pair separation (~0.041m) is wider than the balls' own touching distance (~0.030m, sum of
+   radii) -- the middle finger was wedging itself into the gap and holding them apart. Found
+   `hand_env.BAODING_CONTACT_TARGET` (retract the middle finger, narrow the spread) that brings
+   them into **genuine geom-geom contact** (confirmed via `data.contact`: `ball1 <-> ball2`
+   registers). Tested whether real contact unlocks circulation (`eval_stage6_contact_orbit.py`):
+   it doesn't. `twist_ctrl` on the contact grasp settles into a small stable ~4-5 degree wobble
+   while contact genuinely holds (separation pinned at 0.030m for 7 cycles), then the contact
+   becomes unstable and one ball is **violently ejected** (separation jumps 0.030m -> 0.052m ->
+   0.134m within 2 cycles). Contact between the balls wasn't the missing ingredient -- circulation
+   still needs a traveling/sequenced disturbance, the same contact-planning problem Stage 4/5 hit
+   for one object, now compounded by having a second one to keep track of.
+
+   <p align="center">
+     <img src="media/stage6_baoding_rl.gif" width="300">
+     <img src="media/stage6_contact_orbit.gif" width="300">
+   </p>
+   <p align="center"><sub>Left: `baoding02`'s one-time ~41 degree shift (then static/decaying).
+   Right: the contact-grasp experiment -- a stable wobble, then one ball gets ejected (final
+   frame shows only the red ball remaining).</sub></p>
+
+   **Where this stands**: genuine continuous ball-pair circulation has NOT been achieved by any
+   method tried (two scripted primitives, two RL runs, one contact-grasp variant) -- every
+   attempt converges to either a bounded wobble, a one-time partial shift, or an outright failure.
+   The spin-in-place result above is real and easy but answers a different question than the one
+   asked. Real circulation likely needs either (a) a reward explicitly built around completing
+   full revolutions rather than net angle per step, or (b) genuine sequenced multi-finger contact
+   planning (walking each ball around via a deliberate chain of regrasps), which is a
+   substantially bigger undertaking than anything attempted in this session.
 
 ## Repository layout
 
@@ -425,6 +467,8 @@ allegro_hand/
 ├── demo_stage6_baoding_rl.py              # Stage 6: RL orbit-circulation rollout GIF, item 6
 ├── eval_stage6_ball_spin.py               # Stage 6: ball-vs-ball rolling-spin eval, item 6
 ├── demo_stage6_ball_spin.py               # Stage 6: ball-vs-ball rolling-spin GIF, item 6
+├── eval_stage6_contact_orbit.py           # Stage 6: balls-in-contact orbit experiment, item 6
+├── demo_stage6_contact_orbit.py           # Stage 6: balls-in-contact orbit GIF, item 6
 ├── media/
 │   ├── stage1_kinematic_sweep.gif
 │   ├── stage2_grasp_stability.gif
@@ -432,6 +476,8 @@ allegro_hand/
 │   ├── stage4_finger_gaiting.gif
 │   ├── stage5_gaiting_rl.gif
 │   ├── stage6_baoding_balls.gif
-│   └── stage6_ball_spin.gif
+│   ├── stage6_ball_spin.gif
+│   ├── stage6_baoding_rl.gif
+│   └── stage6_contact_orbit.gif
 └── README.md
 ```

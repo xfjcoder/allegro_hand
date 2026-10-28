@@ -101,6 +101,21 @@ def ball_separation_ok(data):
     return MIN_BALL_SEPARATION <= dist <= MAX_BALL_SEPARATION, dist
 
 
+# User: "the current baoding .gif show two are separated with distance, no contact, no push each
+# other" -- correct; BAODING_GRASP_TARGET's separation (~0.041m) is wider than the balls' own
+# touching distance (~0.030m, sum of radii). Found this by sweeping curl/spread with the middle
+# finger's curl FORCED to 0 (open) -- it was the one wedging itself into the gap between the
+# balls and holding them apart; with it retracted and a narrower spread, ff/rf/th alone bring the
+# balls into genuine geom-geom contact (confirmed via data.contact, see README Stage 6). Tested
+# whether this closes the orbiting gap: it doesn't -- `twist_ctrl` on this contact grasp settles
+# into a small (~4-5 degree) stable wobble while actually touching, then the contact becomes
+# unstable after several cycles and one ball gets violently ejected (separation jumps ~4x in one
+# step). Contact between the balls wasn't the missing ingredient for circulation.
+BAODING_CONTACT_TARGET = make_grasp_target(curl_frac=0.95, thumb_base=1.3, base_spread=0.15)
+BAODING_CONTACT_TARGET[4:8] = make_grasp_target(curl_frac=0.0, thumb_base=1.3,
+                                                 base_spread=0.15)[4:8]
+
+
 def settle_object(model, data, settle_seconds=1.0):
     """Holds the hand open (ctrl=0) for settle_seconds so the included free-floating object
     falls from its spawn position ([0,0,0.1], per scene_right.xml) into its passive resting

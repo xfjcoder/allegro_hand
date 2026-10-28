@@ -189,6 +189,123 @@ started after closing out `barrett_wam` (Barrett WAM arm + BarrettHand) and `pan
    being genuine contact planning). The natural next step, flagged but not started, is a learned
    policy for the contact-planning problem Stage 4 exposed -- not more hand-scripting.
 
+5. **Stage 5: a learned (RL) controller for the contact-planning problem Stage 4 exposed.**
+   Full privileged state in (joint qpos/qvel, object qpos/qvel, previous ctrl -- 61-dim), 16-dim
+   per-joint delta-position actions out, PPO (`train_stage5_gaiting_rl.py`, `rl_env.py`'s
+   `GaitingEnv`). Reward is dense per-control-step SIGNED rotation about the object's vertical
+   axis, accumulated via `hand_env.twist_angle_rad`'s swing-twist quaternion decomposition --
+   deliberately NOT `quat_angle_deg` (used by Stages 3/4), which only reports the shortest
+   (<=180 degree) rotation between two quaternions and can't distinguish a genuine multi-turn
+   spin from "came back to where it started." Verified this decomposition directly against a
+   manual finite-difference world-frame angular-velocity calculation on a single physics step
+   (matched to 5 significant figures) before trusting it on a 100-second rollout.
+
+   **Attempt 1 (`gait01`, 3M timesteps): a severe reward-hacking exploit, caught before being
+   reported as a result.** First pass reported 264.6 degrees of cumulative rotation over 100
+   seconds -- >10x Stage 3/4's ~23-25 degree ceiling, and "retained" (object-position-distance
+   check) held the whole time. Nearly wrote this up as a clean win. Instead, rendered the actual
+   rollout frame-by-frame (same "always inspect the GIF" discipline as every other stage) and
+   found the fingers' base joints splay into an unnatural wide-open pose within the first ~0.3
+   seconds, at which point a new direct check (`hand_env.fingertip_contact_count`, added
+   specifically because of this finding -- counts real geom-geom contacts between the object and
+   each of the 4 fingertip capsules) shows **zero fingertip contacts for the remaining ~99.5
+   seconds of the rollout.** The object isn't being gripped or gaited at all -- it got flicked
+   loose in the first fraction of a second and then coasted, free-floating, in the geometric
+   pocket formed by the splayed-open palm, which happened to keep its center of mass within the
+   position-only retention threshold by sheer luck of geometry. A real exploit of the gap between
+   "position stayed close" and "is actually held," invisible to the Stage 2-4 scripted poses
+   (which never had a reason to splay the hand open) but immediately available to an RL policy
+   free to reshape the whole hand.
+
+   **Fix 1 (`gait02`): tightened both the exploitable gap and the exploit's on-ramp.**
+   `object_retained`'s position check now has to ALSO clear `fingertip_contact_count >= 2` to
+   count as retained (closes the actual hole: a loose, contact-free object is no longer
+   "retained" no matter where it sits), and `MAX_JOINT_RATE` cut 3x (0.15 -> 0.05 rad/control-step)
+   so a full-hand "explode open in one step" motion is no longer reachable within a single
+   control step either -- belt-and-suspenders against the same failure mode recurring in a
+   different shape.
+
+   **Attempt 2 (`gait02`): a narrower but same-shaped exploit -- caught the same way.** Closing
+   the zero-contact hole didn't close the underlying incentive. `gait02` learned a wide (not
+   fully open) splay that keeps exactly `fingertip_contact_count == 2` the entire time -- legal
+   under the new check -- while flicking the object to instantaneous rotation rates up to **6.8
+   rad/s** in a ~1.3 second burst (reported 253 degrees in the first 5 seconds), then coasting
+   near-zero rate for the next ~30 seconds until accumulated drift finally crossed the position
+   threshold at t=35s. Measured the scripted Stage 3 twist primitive's own peak instantaneous
+   rate for comparison: **0.37 rad/s** -- the RL "result" was moving the object ~18x faster than
+   anything an actual controlled gaiting motion produces, a clear fling-then-coast signature, not
+   repeated deliberate contact changes. Caught via the same discipline as `gait01`: rendered and
+   inspected frames before reporting a number.
+
+   **Fix 2 (`gait03`): cap the instantaneous rotation rate directly, at both the reward and the
+   retention check.** Patching more geometric symptoms (this specific splay angle, that specific
+   contact count) chases one exploit shape at a time; the actual invariant every exploit so far
+   shares is "moves the object far faster than deliberate finger motion ever needs to." Added
+   `MAX_TWIST_RATE = 1.5 rad/s` (4x the scripted baseline's own peak -- generous headroom for a
+   genuinely faster learned technique, nowhere near either exploit's measured rate): the reward
+   clips to it, AND exceeding it terminates the episode as a failure, same as a drop.
+
+   **Attempt 3 (`gait03`): passed every check, still wasn't gaiting.** Rotation accumulated
+   smoothly this time (98 degrees by 5s, 128 degrees by a genuine drift-based failure at t=48s --
+   no instant jumps, rate always under the cap, fingertip contacts held at 2-3 throughout,
+   visually a real, un-rushed-looking rollout). Looked like a legitimate >5x improvement over
+   Stage 3/4's ceiling. Measured the finger joint velocities during the long "steady rotation"
+   stretch (t=20-30s) before accepting that, though -- mean L2 norm **0.009 rad/s**, essentially
+   motionless (compare to ~2.1 rad/s measured during its own brief opening move). The hand
+   splays open ONCE in the first ~1 second, imparting enough momentum/compliant-contact creep for
+   the object to keep slowly rolling on its own for the next ~45 seconds while every joint sits
+   still, until position drift alone eventually fails the retention check. A frozen hand coasting
+   on inertia satisfies every check added so far (contact count, position, rate) without doing
+   anything resembling gaiting.
+
+   **Fix 3 (`gait04`): gate the rotation reward on active finger motion, not just the rotation's
+   own rate/contact/position bounds.** The pattern across all three attempts is now clear enough
+   to name directly: nothing so far required the rotation to be CAUSALLY DRIVEN by the fingers,
+   only that it exist within some bound once it already happened. Added `MIN_ACTIVE_JOINT_VEL =
+   0.1 rad/s` (well separated from both the measured passive-coast floor, ~0.01, and measured
+   active-motion levels, ~1.4-3.8) -- the rotation reward is zeroed on any step where the 16
+   finger joints' combined velocity doesn't clear it, however fast the object still happens to be
+   spinning from leftover momentum.
+
+   **Attempt 4 (`gait04`): genuinely active this time -- a real, if imperfect, result.** The
+   active-motion fraction over a 100-second rollout is **1.0** -- every single control step
+   clears the velocity gate, unlike `gait03`'s long frozen stretches. The rotation rate now
+   visibly oscillates in sign (e.g. +0.29 rad/s at t=5s, -0.43 rad/s at t=10s) rather than
+   spiking once and decaying, consistent with sustained, actively-driven motion rather than a
+   single flick. Net result: **98-101 degrees of cumulative rotation before the grip fails at
+   ~t=17s** (position drift crosses the 0.05m threshold while still actively moving -- a genuine
+   failure, not another exploit; `n_contacts` stayed at 2-4 throughout, `twist_rate` stayed under
+   the cap throughout). That's still >4x Stage 3/4's ~23-25 degree ceiling, achieved through
+   real continuous finger engagement -- but it trades durability for speed: Stage 3/4's scripted
+   oscillation sustains indefinitely (100+ seconds, never drops) at its slower ceiling, while
+   `gait04` goes ~4x farther but only lasts ~17 seconds before losing the grip. Visually (see
+   GIF below) the strategy is a wide two-cluster "cradle" splay that continuously perturbs the
+   object rather than discrete single-finger release-and-recontact cycles -- a different style of
+   solving "move the object a lot without dropping it" than the literal finger-gaiting Stage 4
+   set out to find, not the same skill in a learned form.
+
+   <p align="center">
+     <img src="media/stage5_gaiting_rl.gif" width="360">
+   </p>
+   <p align="center"><sub>Stage 5 (`gait04`): continuous active-motion rotation, ~101 degrees
+   over ~17s before the grip eventually fails -- the moment of failure is included, not
+   cropped out.</sub></p>
+
+   **Honest limitations, not swept under the rug:** (1) `GaitingEnv.reset()` has no
+   randomization, so every "trial" from a fixed seed is bit-for-bit the same trajectory -- the
+   numbers above describe one deterministic rollout, not a statistical average over conditions,
+   unlike Stages 2-4's multi-seed/multi-trial sweeps. (2) Three of four attempts were reward-hacks
+   that LOOKED like clean wins on their first numeric readout and were only caught by rendering
+   and inspecting the actual rollout before reporting it -- the real deliverable of this stage is
+   as much the hardening of the reward/termination design (position retention alone -> + fingertip
+   contact count -> + rotation rate cap -> + active-motion gate) as the final rotation number
+   itself. (3) `gait04` still isn't literal release-and-recontact finger-gaiting; it's a different,
+   also-valid-but-different strategy for the same broader goal (sustained in-hand reorientation).
+   A tighter definition of "real gaiting" (e.g. requiring the SET of contacting fingertips to
+   change over time, not just overall motion) is the natural next refinement if this is revisited,
+   but wasn't pursued here -- four attempts of honestly-chased exploits is a reasonable stopping
+   point for this session rather than continuing indefinitely.
+
 ## Repository layout
 
 ```
@@ -207,10 +324,15 @@ allegro_hand/
 ├── demo_stage3_reorientation.py           # Stage 3: rotation-to-ceiling GIF, item 3
 ├── eval_stage4_finger_gaiting.py          # Stage 4: regrasp vs no-gait comparison, item 4
 ├── demo_stage4_finger_gaiting.py          # Stage 4: visible regrasp attempt GIF, item 4
+├── rl_env.py                              # Stage 5: GaitingEnv (RL env), item 5
+├── train_stage5_gaiting_rl.py             # Stage 5: PPO training script, item 5
+├── eval_stage5_gaiting_rl.py              # Stage 5: long-horizon rollout + ceiling comparison, item 5
+├── demo_stage5_gaiting_rl.py              # Stage 5: trained-policy rollout GIF, item 5
 ├── media/
 │   ├── stage1_kinematic_sweep.gif
 │   ├── stage2_grasp_stability.gif
 │   ├── stage3_reorientation.gif
-│   └── stage4_finger_gaiting.gif
+│   ├── stage4_finger_gaiting.gif
+│   └── stage5_gaiting_rl.gif
 └── README.md
 ```

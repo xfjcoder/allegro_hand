@@ -93,15 +93,87 @@ def apply_push(data, push_vel):
 
 def object_retained(data, threshold=0.05):
     """True if the object is still within `threshold` meters of its passive-rest position --
-    this project's grasp-stability success criterion (see this module's docstring)."""
+    this project's grasp-stability success criterion (see this module's docstring).
+
+    **Known gap, found during Stage 5 (see README)**: this alone does NOT guarantee the object is
+    actually held by the fingers -- an object wedged/rattling in a gap between splayed-open
+    fingers can stay within `threshold` of its rest position without any real multi-finger grip.
+    For any task where the POLICY can freely reshape the hand (Stage 5's RL, unlike Stages 2-4's
+    fixed scripted poses), pair this with `fingertip_contact_count` below and require >=2."""
     dist = np.linalg.norm(data.body("object").xpos - OBJECT_REST_POS)
     return dist < threshold, dist
 
 
+FINGERTIP_BODY_NAMES = ("ff_tip", "mf_tip", "rf_tip", "th_tip")
+
+
+def _collision_geom_id(model, body_name):
+    """Each fingertip body has 2 geoms (see assets/right_hand.xml): a visual mesh (contype=0,
+    doesn't register contacts) followed by the actual collision capsule -- confirmed directly via
+    model.geom_bodyid/geom_type on the vendored, unmodified scene_right.xml. Looked up by body
+    name (not hardcoded index) so this survives any future asset re-vendor."""
+    body_id = mj.mj_name2id(model, mj.mjtObj.mjOBJ_BODY, body_name)
+    start, num = model.body_geomadr[body_id], model.body_geomnum[body_id]
+    return start + (1 if num > 1 else 0)
+
+
+def fingertip_contact_count(model, data, object_geom_id=None):
+    """Number of DISTINCT fingertips (0-4) currently in contact with the object -- a real
+    multi-finger-grip signal, unlike `object_retained`'s position-only check (see its docstring
+    for why that alone isn't enough once the policy can reshape the hand itself)."""
+    if object_geom_id is None:
+        object_geom_id = _collision_geom_id(model, "object") if model.body_geomnum[
+            mj.mj_name2id(model, mj.mjtObj.mjOBJ_BODY, "object")] > 1 else \
+            model.body_geomadr[mj.mj_name2id(model, mj.mjtObj.mjOBJ_BODY, "object")]
+    tip_geom_ids = {_collision_geom_id(model, name) for name in FINGERTIP_BODY_NAMES}
+    touching = set()
+    for i in range(data.ncon):
+        c = data.contact[i]
+        if c.geom1 == object_geom_id and c.geom2 in tip_geom_ids:
+            touching.add(c.geom2)
+        elif c.geom2 == object_geom_id and c.geom1 in tip_geom_ids:
+            touching.add(c.geom1)
+    return len(touching)
+
+
 def quat_angle_deg(q1, q2):
-    """Shortest rotation angle (degrees) between two world-frame quaternions (mjtNum wxyz)."""
+    """Shortest rotation angle (degrees) between two world-frame quaternions (mjtNum wxyz).
+    Only meaningful up to 180 degrees (quaternions double-cover rotations) -- can't tell a
+    genuine multi-turn spin from a return-to-start. Use `twist_angle_rad` + per-step
+    accumulation (see below) for Stage 5's "did we actually spin past the Stage 3/4 ceiling"
+    question, where the whole point is to exceed a single half-turn."""
     dot = np.clip(abs(np.dot(q1, q2)), 0.0, 1.0)
     return np.degrees(2 * np.arccos(dot))
+
+
+def _quat_mul(q1, q2):
+    w1, x1, y1, z1 = q1
+    w2, x2, y2, z2 = q2
+    return np.array([
+        w1 * w2 - x1 * x2 - y1 * y2 - z1 * z2,
+        w1 * x2 + x1 * w2 + y1 * z2 - z1 * y2,
+        w1 * y2 - x1 * z2 + y1 * w2 + z1 * x2,
+        w1 * z2 + x1 * y2 - y1 * x2 + z1 * w2,
+    ])
+
+
+def _quat_conj(q):
+    return np.array([q[0], -q[1], -q[2], -q[3]])
+
+
+def twist_angle_rad(q_prev, q_cur, axis=np.array([0.0, 0.0, 1.0])):
+    """Signed incremental rotation (radians) of q_cur relative to q_prev, about world `axis`,
+    via swing-twist decomposition (the correct way to isolate "how much did it spin about THIS
+    axis" from a quaternion that may also include off-axis wobble -- a naive dot-product
+    projection of the vector part conflates the two). Meant to be called every control step and
+    SUMMED, unlike `quat_angle_deg` -- that's how Stage 5's RL env/eval can detect genuine
+    multi-turn rotation (e.g. 400 degrees of net spin), which a single start-to-now quat_angle_deg
+    call could never report (it saturates at 180 and would read that spin as "coming back")."""
+    q_rel = _quat_mul(q_cur, _quat_conj(q_prev))
+    w, v = q_rel[0], q_rel[1:]
+    s = np.dot(v, axis)
+    angle = 2 * np.arctan2(abs(s), w)
+    return angle if s >= 0 else -angle
 
 
 def regrasp_finger(model, data, finger_ctrl_slice, hold_target, release_seconds=0.4,

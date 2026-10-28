@@ -565,11 +565,11 @@ started after closing out `barrett_wam` (Barrett WAM arm + BarrettHand) and `pan
    (consistent with the measured ~46 degrees), then hold there indefinitely.
 
    <p align="center">
-     <img src="media/stage6_four_finger_orbit.gif" width="360">
+     <img src="media/stage6_four_finger_orbit_v1.gif" width="360">
    </p>
    <p align="center"><sub>`four_finger_orbit_ctrl`: -46.6 degrees, and (unlike every prior
    primitive) it just STAYS there -- rock-stable, no ejection, the best combination of progress
-   and stability found in this entire stage.</sub></p>
+   and stability found in this entire stage. (Superseded below by the upright-thumb variant.)</sub></p>
 
    **Updated standing**: this is now the strongest evidence yet for the geometric-chokepoint
    hypothesis -- a wide amplitude sweep of a structurally different (4-digit, not 2-digit)
@@ -580,6 +580,35 @@ started after closing out `barrett_wam` (Barrett WAM arm + BarrettHand) and `pan
    rotating-gate idea -- advance the gate phase in one direction only, pausing/holding rather than
    returning, the same insight that motivated `leapfrog_half_cycle` but applied to all four digits
    instead of two.
+
+   **User, watching that GIF: "the thumb curl all way down, that block the way in hand for balls
+   pass to other side, the thumb should be more in upright position, make sure balls not drop out
+   of hand and help balls cross each other"** -- correct mechanically: `BAODING_GRASP_TARGET_LARGE`
+   holds the thumb at curl_frac=0.85 (~97% of its own curl range) the ENTIRE time (the orbit
+   primitive never modulates it unless `thumb_amp_*` is set), and confirmed via `data.contact`
+   that this curled-down posture genuinely touches both balls during the dynamic orbit (unlike a
+   static hold, where the thumb never touches anything at all -- see below).
+
+   Swept the thumb's own curl_frac in isolation (ff/mf/rf curl and thumb_base position
+   unchanged): a sharp cliff between curl_frac=0.55 (orbit collapses to -6 to -8 degrees) and
+   curl_frac=0.6 (-32 degrees) -- below the cliff the thumb loses ball contact entirely (confirmed
+   via `data.contact`) and simply stops contributing any driving force, not just stops blocking,
+   so "fully upright" is actually WORSE, not better. Above the cliff, `curl_frac=0.75` (visibly
+   less curled than the original 0.85, i.e. more upright, while still thumb_base=1.3) does
+   slightly BETTER once amp_lat/amp_curl are re-swept for the new geometry:
+   `BAODING_GRASP_TARGET_LARGE_UPRIGHT_THUMB` + amp_lat=0.35/amp_curl=0.12 converges to **-54.6
+   degrees**, rock-stable over 70 cycles (140+ seconds) -- an 18% improvement over the fully-curled
+   thumb's -46.6 degree ceiling, while visibly less curled over the balls in the rendered frames.
+   Ball retention was never actually at risk from reducing thumb curl in the first place: measured
+   directly that the thumb contributes ZERO static-hold contact regardless of its curl_frac (0.0
+   through 0.6) -- the static grasp is held entirely by ff/mf/rf + palm, with the thumb's role
+   being purely dynamic (during the orbit motion itself), not structural.
+
+   <p align="center">
+     <img src="media/stage6_four_finger_orbit.gif" width="360">
+   </p>
+   <p align="center"><sub>Updated: `four_finger_orbit_ctrl` with the upright-thumb grasp --
+   -54.6 degrees, rock-stable, thumb visibly less curled over the balls than before.</sub></p>
 
 ## Repository layout
 
@@ -638,6 +667,7 @@ allegro_hand/
 │   ├── stage6_leapfrog.gif
 │   ├── stage6_baoding_rl_v2.gif
 │   ├── stage6_diagonal_stroke.gif
+│   ├── stage6_four_finger_orbit_v1.gif
 │   └── stage6_four_finger_orbit.gif
 └── README.md
 ```

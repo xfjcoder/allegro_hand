@@ -2,9 +2,13 @@
 user's observation on the diagonal_stroke_ctrl GIF: "middle finger and thumb block balls cross
 each other, can 4 fingers work in a coordinate way?"
 
-Uses the amp_lat=0.3/amp_curl=0.15, no-thumb config (see eval_stage6_four_finger_orbit.py): the
-best result found -- converges to ~-46.6 degrees and STAYS there, rock-stable, no ejection even
-over 60 cycles (2 minutes), unlike every previous primitive that traded progress for stability.
+Default grasp/amplitudes are the "upright thumb" variant
+(`hand_env.BAODING_GRASP_TARGET_LARGE_UPRIGHT_THUMB`), from the user's next observation: "the
+thumb curl all way down, that block the way in hand for balls pass to other side, the thumb
+should be more in upright position". Re-tuning the thumb's curl_frac (0.85 -> 0.75) and
+re-sweeping amp_lat/amp_curl for that geometry found amp_lat=0.35/amp_curl=0.12 converges to
+-54.6 degrees, rock-stable, an 18% improvement over the fully-curled thumb's -46.6 degree
+ceiling. Pass `--grasp original` to render the fully-curled-thumb version instead.
 
 Usage:
     python3 demo_stage6_four_finger_orbit.py --record media/stage6_four_finger_orbit.gif
@@ -16,10 +20,10 @@ import mujoco as mj
 import numpy as np
 from PIL import Image
 
-from hand_env import (BAODING_GRASP_TARGET_LARGE, BALL_REST_POS_LARGE, MAX_BALL_SEPARATION_LARGE,
-                       MIN_BALL_SEPARATION_LARGE, TWO_BALL_SCENE_LARGE, ball_pair_angle_rad,
-                       ball_separation_ok, balls_retained, four_finger_orbit_ctrl, ramp_to_target,
-                       settle_object)
+from hand_env import (BAODING_GRASP_TARGET_LARGE, BAODING_GRASP_TARGET_LARGE_UPRIGHT_THUMB,
+                       BALL_REST_POS_LARGE, MAX_BALL_SEPARATION_LARGE, MIN_BALL_SEPARATION_LARGE,
+                       TWO_BALL_SCENE_LARGE, ball_pair_angle_rad, ball_separation_ok,
+                       balls_retained, four_finger_orbit_ctrl, ramp_to_target, settle_object)
 
 
 def _wrap(a):
@@ -29,8 +33,9 @@ def _wrap(a):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--scene", type=str, default=TWO_BALL_SCENE_LARGE)
-    ap.add_argument("--amp-lat", type=float, default=0.3)
-    ap.add_argument("--amp-curl", type=float, default=0.15)
+    ap.add_argument("--grasp", choices=("upright_thumb", "original"), default="upright_thumb")
+    ap.add_argument("--amp-lat", type=float, default=0.35)
+    ap.add_argument("--amp-curl", type=float, default=0.12)
     ap.add_argument("--thumb-amp-base", type=float, default=0.0)
     ap.add_argument("--thumb-amp-curl", type=float, default=0.0)
     ap.add_argument("--cycles", type=int, default=15)
@@ -39,6 +44,8 @@ def main():
     ap.add_argument("--frame-stride", type=int, default=30)
     args = ap.parse_args()
 
+    grasp_target = (BAODING_GRASP_TARGET_LARGE_UPRIGHT_THUMB if args.grasp == "upright_thumb"
+                     else BAODING_GRASP_TARGET_LARGE)
     model = mj.MjModel.from_xml_path(args.scene)
     data = mj.MjData(model)
     mj.mj_forward(model, data)
@@ -69,8 +76,8 @@ def main():
     start = data.ctrl.copy()
     for i in range(n_ramp):
         alpha = (i + 1) / n_ramp
-        step_n(start + alpha * (BAODING_GRASP_TARGET_LARGE - start), 1)
-    step_n(BAODING_GRASP_TARGET_LARGE, int(0.3 / dt))
+        step_n(start + alpha * (grasp_target - start), 1)
+    step_n(grasp_target, int(0.3 / dt))
 
     n_steps = int(args.cycle_seconds / dt)
     angle_prev = ball_pair_angle_rad(data)
@@ -78,9 +85,8 @@ def main():
     for cyc in range(args.cycles):
         for t in range(n_steps):
             phase = (t / n_steps) * 2 * np.pi
-            ctrl = four_finger_orbit_ctrl(BAODING_GRASP_TARGET_LARGE, args.amp_lat,
-                                           args.amp_curl, phase, args.thumb_amp_base,
-                                           args.thumb_amp_curl)
+            ctrl = four_finger_orbit_ctrl(grasp_target, args.amp_lat, args.amp_curl, phase,
+                                           args.thumb_amp_base, args.thumb_amp_curl)
             step_n(ctrl, 1)
         angle_cur = ball_pair_angle_rad(data)
         cum += _wrap(angle_cur - angle_prev)

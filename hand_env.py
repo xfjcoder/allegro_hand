@@ -146,6 +146,28 @@ BAODING_CONTACT_TARGET[4:8] = make_grasp_target(curl_frac=0.0, thumb_base=1.3,
                                                  base_spread=0.15)[4:8]
 
 
+# Stage 6 continued: user, watching the four_finger_orbit_ctrl GIF -- "the thumb curl all way
+# down, that block the way in hand for balls pass to other side, the thumb should be more in
+# upright position". BAODING_GRASP_TARGET_LARGE's thumb sits at curl_frac=0.85 (~97% of its own
+# curl range) the whole time; confirmed via data.contact that this thumb posture DOES contact
+# both balls during the dynamic four-finger orbit (even though it never does during a static
+# hold -- see README), so it's a real mechanical obstruction, not just a visual one.
+#
+# Swept thumb curl_frac in isolation (ff/mf/rf curl, thumb_base all unchanged) against
+# four_finger_orbit_ctrl's orbit result: a sharp cliff between curl_frac=0.55 (orbit collapses to
+# -6 to -8 degrees, same magnitude as the ORIGINAL ff/rf-only diagonal_stroke_ctrl) and
+# curl_frac=0.6 (-32 degrees) -- below the cliff the thumb loses ball contact entirely (confirmed
+# via data.contact) and stops contributing any driving force, not just stops blocking. Above the
+# cliff, curl_frac=0.75 (visibly less curled / more upright than the original 0.85) does
+# slightly BETTER than 0.85 itself once amp_lat/amp_curl are re-swept for this geometry:
+# amp_lat=0.35/amp_curl=0.12 converges to -54.6 degrees, rock-stable over 70 cycles (over 2
+# minutes) -- an 18% improvement over the fully-curled thumb's -46.6 degree ceiling, while also
+# being a visibly more upright thumb posture, matching what the user asked for.
+BAODING_GRASP_TARGET_LARGE_UPRIGHT_THUMB = BAODING_GRASP_TARGET_LARGE.copy()
+BAODING_GRASP_TARGET_LARGE_UPRIGHT_THUMB[13:16] = make_grasp_target(
+    curl_frac=0.75, thumb_base=1.3, base_spread=0.0)[13:16]
+
+
 def settle_object(model, data, settle_seconds=1.0):
     """Holds the hand open (ctrl=0) for settle_seconds so the included free-floating object
     falls from its spawn position ([0,0,0.1], per scene_right.xml) into its passive resting

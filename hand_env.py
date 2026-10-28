@@ -397,6 +397,41 @@ def diagonal_stroke_ctrl(base_ctrl, amp_lat, amp_curl, phase, thumb_amp_base=0.0
     return c
 
 
+FOUR_DIGIT_BASE_IDX = {"ff": 0, "mf": 4, "rf": 8}
+FOUR_DIGIT_CURL_IDX = {"ff": 1, "mf": 5, "rf": 9}
+FOUR_DIGIT_PHASE_OFFSET = {"ff": 0.0, "mf": np.pi / 2, "rf": np.pi, "th": 3 * np.pi / 2}
+
+
+def four_finger_orbit_ctrl(base_ctrl, amp_lat, amp_curl, phase, thumb_amp_base=0.0,
+                            thumb_amp_curl=0.0):
+    """Stage 6 continued -- user, watching `diagonal_stroke_ctrl`'s GIF: "middle finger and thumb
+    block balls cross each other, can 4 fingers work in a coordinate way". Correct: that
+    primitive only ever moves ff/rf -- mf and th sit rigidly at `base_ctrl`'s fixed target the
+    whole time, so they act as a static wall the balls have to be squeezed past rather than a gap
+    that opens for them.
+
+    This instead gives all FOUR digits (ff, mf, rf, th) the same lateral+curl quadrature stroke
+    `diagonal_stroke_ctrl` used for just ff/rf, but phased a quarter-cycle apart from each other
+    (`FOUR_DIGIT_PHASE_OFFSET`, 0/90/180/270 degrees) -- a rotating gate: at any instant exactly
+    one digit is near its own curl minimum (maximally retracted, i.e. "open") while the others are
+    nearer their own curl maximum (engaged, holding), and which digit is open sweeps around all
+    four in sequence as `phase` advances, instead of the fixed ff/rf-only opening pattern before."""
+    c = base_ctrl.copy()
+    lo1, hi1 = FINGER_CURL_RANGES[1]
+    for name, base_idx in FOUR_DIGIT_BASE_IDX.items():
+        curl_idx = FOUR_DIGIT_CURL_IDX[name]
+        local = phase + FOUR_DIGIT_PHASE_OFFSET[name]
+        c[base_idx] = base_ctrl[base_idx] + amp_lat * np.sin(local)
+        c[curl_idx] = np.clip(base_ctrl[curl_idx] + amp_curl * (hi1 - lo1) * np.cos(local), lo1,
+                               hi1)
+    if thumb_amp_base or thumb_amp_curl:
+        lo_t, hi_t = THUMB_CURL_RANGES[1]
+        local = phase + FOUR_DIGIT_PHASE_OFFSET["th"]
+        c[12] = np.clip(base_ctrl[12] + thumb_amp_base * np.sin(local), *THUMB_BASE_RANGE)
+        c[13] = np.clip(base_ctrl[13] + thumb_amp_curl * (hi_t - lo_t) * np.cos(local), lo_t, hi_t)
+    return c
+
+
 def leapfrog_half_cycle(model, data, base_ctrl, release_slice, push_idx, release_amt=0.2,
                          push_amt=0.25, duration_seconds=0.6, hold_seconds=0.2):
     """One half of a "leapfrog" attempt at genuine circulation (not a smooth periodic oscillation

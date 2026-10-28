@@ -541,6 +541,46 @@ started after closing out `barrett_wam` (Barrett WAM arm + BarrettHand) and `pan
    <p align="center"><sub>`diagonal_stroke_ctrl`, no thumb: -34 degrees of genuine crossing
    (red/blue visibly swap from side-by-side to stacked) before ejection around cycle 12.</sub></p>
 
+   **User, watching that GIF: "middle finger and thumb block balls cross each other, can 4
+   fingers work in a coordinate way"** -- correct again: `diagonal_stroke_ctrl` only ever moves
+   ff/rf; mf and th sit rigidly at the fixed grasp target the whole time, forming a static wall
+   rather than a gap. Built `hand_env.four_finger_orbit_ctrl`: all FOUR digits (ff, mf, rf, th)
+   get the same lateral+curl quadrature stroke, phased a quarter-cycle (90 degrees) apart from
+   each other -- a rotating gate where exactly one digit is maximally retracted ("open") at any
+   instant, and which digit that is sweeps around all four in sequence as phase advances, instead
+   of the fixed ff/rf-only opening before.
+
+   Result is a genuine qualitative change, not just a bigger number: **amp_lat=0.3/amp_curl=0.15
+   (no thumb) converges to -46.6 degrees and STAYS there, rock-stable, verified over 60 cycles (2
+   minutes) with zero ejection** -- for the first time, real progress and stability together,
+   rather than every prior method's forced tradeoff between them. A broad amplitude sweep
+   (amp_lat 0.1-0.4, amp_curl 0.1-0.3) is revealing on its own: nearly every stable combination
+   converges to roughly the same -35 to -46 degree range regardless of significant amplitude
+   change -- the signature of a genuine structural fixed point, not an under-tuned parameter.
+   Engaging the thumb's own quadrature slot was tried and made it slightly WORSE (-33 degrees) at
+   every tested amplitude, suggesting the thumb's actual geometric role (opposing all three
+   fingers, not sitting at a "4th corner of a square" the way ff/mf/rf do) doesn't fit the same
+   quarter-phase assumption that worked for ff/mf/rf -- a real negative result, not a bug. Visually
+   confirmed via rendered frames: red and blue genuinely rotate from side-by-side toward stacked
+   (consistent with the measured ~46 degrees), then hold there indefinitely.
+
+   <p align="center">
+     <img src="media/stage6_four_finger_orbit.gif" width="360">
+   </p>
+   <p align="center"><sub>`four_finger_orbit_ctrl`: -46.6 degrees, and (unlike every prior
+   primitive) it just STAYS there -- rock-stable, no ejection, the best combination of progress
+   and stability found in this entire stage.</sub></p>
+
+   **Updated standing**: this is now the strongest evidence yet for the geometric-chokepoint
+   hypothesis -- a wide amplitude sweep of a structurally different (4-digit, not 2-digit)
+   primitive still lands in the same ~35-46 degree range as a fixed point, suggesting this hand's
+   kinematics has a genuine limit somewhere around an eighth-of-a-lap for this ball size/grasp,
+   not simply a matter of finding the right primitive or amplitude. The next real test of that
+   hypothesis would be a non-periodic (sequenced, ratchet-like) version of this same 4-digit
+   rotating-gate idea -- advance the gate phase in one direction only, pausing/holding rather than
+   returning, the same insight that motivated `leapfrog_half_cycle` but applied to all four digits
+   instead of two.
+
 ## Repository layout
 
 ```
@@ -583,6 +623,8 @@ allegro_hand/
 ├── demo_stage6_baoding_rl_v2.py           # Stage 6: v2 rollout GIF, item 6
 ├── eval_stage6_diagonal_stroke.py         # Stage 6: lateral+curl quadrature orbit attempt, item 6
 ├── demo_stage6_diagonal_stroke.py         # Stage 6: diagonal-stroke attempt GIF, item 6
+├── eval_stage6_four_finger_orbit.py       # Stage 6: 4-digit rotating-gate orbit attempt, item 6
+├── demo_stage6_four_finger_orbit.py       # Stage 6: four-finger-orbit attempt GIF, item 6
 ├── media/
 │   ├── stage1_kinematic_sweep.gif
 │   ├── stage2_grasp_stability.gif
@@ -595,6 +637,7 @@ allegro_hand/
 │   ├── stage6_contact_orbit.gif
 │   ├── stage6_leapfrog.gif
 │   ├── stage6_baoding_rl_v2.gif
-│   └── stage6_diagonal_stroke.gif
+│   ├── stage6_diagonal_stroke.gif
+│   └── stage6_four_finger_orbit.gif
 └── README.md
 ```

@@ -364,6 +364,39 @@ RF_CURL_SLICE = slice(9, 12)
 MF_PROXIMAL_IDX = 5
 
 
+def diagonal_stroke_ctrl(base_ctrl, amp_lat, amp_curl, phase, thumb_amp_base=0.0,
+                          thumb_amp_curl=0.0):
+    """Stage 6 continued -- user observation from the orbit_wave_ctrl/leapfrog GIFs: "only three
+    fingers make efforts and the thumb not involved much, and only make balls spin, not push
+    balls to opposite direction and cross each other, can finger move in cross direction...?"
+
+    Correct diagnosis: `orbit_wave_ctrl` and `leapfrog_half_cycle` ONLY modulate curl (flexion,
+    idx 1/2/3 per finger) -- pure RADIAL motion toward/away from the palm center. That's exactly
+    the motion that rolls a ball in place (Stage 6's "ball spin" finding) but has no component
+    in the tangential/lateral direction needed to actually drag a ball sideways across the palm.
+    This primitive instead drives each finger's base/spread joint (idx 0/8, ab-adduction --
+    LATERAL motion) and its own proximal curl joint in quadrature (90 degree phase offset), so
+    each fingertip traces a small ELLIPSE/diagonal stroke (lateral-and-radial at once) instead of
+    pulsing straight in and out. ff and rf are driven with opposite lateral phase so they sweep
+    complementary diagonals (one finger's stroke carries a ball toward where the other is
+    retreating from), and the thumb can optionally be added into the same quadrature pattern
+    (thumb_amp_base/thumb_amp_curl -- both default 0, i.e. thumb stays at `base_ctrl`'s target,
+    matching the GIFs the user was looking at) instead of sitting out the whole motion."""
+    c = base_ctrl.copy()
+    lo1, hi1 = FINGER_CURL_RANGES[1]
+    c[0] = base_ctrl[0] + amp_lat * np.sin(phase)
+    c[1] = np.clip(base_ctrl[1] + amp_curl * (hi1 - lo1) * np.cos(phase), lo1, hi1)
+    c[8] = base_ctrl[8] - amp_lat * np.sin(phase)
+    c[9] = np.clip(base_ctrl[9] + amp_curl * (hi1 - lo1) * np.cos(phase + np.pi), lo1, hi1)
+    if thumb_amp_base or thumb_amp_curl:
+        lo_t, hi_t = THUMB_CURL_RANGES[1]
+        c[12] = np.clip(base_ctrl[12] + thumb_amp_base * np.sin(phase + np.pi / 2),
+                         *THUMB_BASE_RANGE)
+        c[13] = np.clip(base_ctrl[13] + thumb_amp_curl * (hi_t - lo_t) * np.cos(phase + np.pi / 2),
+                         lo_t, hi_t)
+    return c
+
+
 def leapfrog_half_cycle(model, data, base_ctrl, release_slice, push_idx, release_amt=0.2,
                          push_amt=0.25, duration_seconds=0.6, hold_seconds=0.2):
     """One half of a "leapfrog" attempt at genuine circulation (not a smooth periodic oscillation

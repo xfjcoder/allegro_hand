@@ -505,6 +505,42 @@ started after closing out `barrett_wam` (Barrett WAM arm + BarrettHand) and `pan
    similar in spirit to Stage 3's static-friction-cone ceiling -- confirming or refuting that
    would be the natural next diagnostic step if this is revisited further.
 
+   **User, watching the leapfrog/orbit-wave GIFs: "only three fingers make efforts and the thumb
+   not involved much, and only make balls spin, not push balls to opposite direction and cross
+   each other, can finger move in cross direction bottom right to top left and verce vise?"** A
+   correct mechanical diagnosis -- `orbit_wave_ctrl` and `leapfrog_half_cycle` only ever modulate
+   curl (flexion), i.e. pure RADIAL motion toward/away from the palm center, which is exactly what
+   rolls a ball in place (the ball-spin finding) but has no tangential component to drag a ball
+   sideways. Built `hand_env.diagonal_stroke_ctrl` (`eval_stage6_diagonal_stroke.py`,
+   `demo_stage6_diagonal_stroke.py`) to test this directly: drives each finger's base/spread
+   (ab-adduction, lateral) joint and its own proximal curl joint in quadrature (90-degree phase
+   offset) so each fingertip traces a small diagonal/elliptical stroke instead of pulsing straight
+   in and out, with ff and rf swept in opposite lateral phase (complementary diagonals) and an
+   optional thumb quadrature term to engage it instead of leaving it static.
+
+   Confirmed the diagnosis was right: at amp_lat=0.15/amp_curl=0.25 (no thumb), this reaches
+   **-34 degrees before ejecting around cycle 12** -- the best raw progress of any scripted
+   primitive tried (beats `twist_ctrl`'s -23.5 degree ceiling), and visually confirmed via a
+   corrected top-down camera (`distance=0.18, elevation=-75, azimuth=200` -- the previous
+   large-ball-scene camera angle hid the balls behind the more-curled fingers needed for this
+   scene) as genuine crossing: red and blue visibly swap from side-by-side to stacked, matching
+   the measured angle. Engaging the thumb in-phase with the curl term (squeezing harder at both
+   lateral extremes, `thumb_amp_curl=0.4+`) does stop the separation-drift ejection and holds
+   rock-stable for 45+ cycles -- but, same signature as `twist_ctrl`/`orbit_wave_ctrl`, it then
+   just converges to a bounded 3-cycle limit oscillation around -12 to -16 degrees rather than
+   continuing to progress. Same tradeoff as every other method: push amplitude for real progress
+   -> separation drifts out and ejects; stabilize it -> bounded fixed point, not continuous
+   transport. The user's diagnosis measurably improved the single-cycle ceiling (34 vs 23.5
+   degrees) and visibly engaged the thumb, but didn't escape the stability/progress tradeoff
+   underlying every method tried so far -- further evidence for (not against) the geometric-
+   chokepoint hypothesis above.
+
+   <p align="center">
+     <img src="media/stage6_diagonal_stroke.gif" width="360">
+   </p>
+   <p align="center"><sub>`diagonal_stroke_ctrl`, no thumb: -34 degrees of genuine crossing
+   (red/blue visibly swap from side-by-side to stacked) before ejection around cycle 12.</sub></p>
+
 ## Repository layout
 
 ```
@@ -545,6 +581,8 @@ allegro_hand/
 ├── train_stage6_baoding_rl_v2.py          # Stage 6: PPO training script (v2), item 6
 ├── eval_stage6_baoding_rl_v2.py           # Stage 6: v2 rollout eval, item 6
 ├── demo_stage6_baoding_rl_v2.py           # Stage 6: v2 rollout GIF, item 6
+├── eval_stage6_diagonal_stroke.py         # Stage 6: lateral+curl quadrature orbit attempt, item 6
+├── demo_stage6_diagonal_stroke.py         # Stage 6: diagonal-stroke attempt GIF, item 6
 ├── media/
 │   ├── stage1_kinematic_sweep.gif
 │   ├── stage2_grasp_stability.gif
@@ -556,6 +594,7 @@ allegro_hand/
 │   ├── stage6_baoding_rl.gif
 │   ├── stage6_contact_orbit.gif
 │   ├── stage6_leapfrog.gif
-│   └── stage6_baoding_rl_v2.gif
+│   ├── stage6_baoding_rl_v2.gif
+│   └── stage6_diagonal_stroke.gif
 └── README.md
 ```

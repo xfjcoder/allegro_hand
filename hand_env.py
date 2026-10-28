@@ -39,11 +39,14 @@ BALL_REST_POS = {
 }
 
 
-def balls_retained(data, threshold=0.05):
-    """Same role as object_retained, but for the two-ball scene -- both balls must stay within
-    `threshold` of their OWN measured rest position. Returns (both_retained, per-ball distances)."""
+def balls_retained(data, threshold=0.05, rest_pos=None):
+    """Same role as object_retained, but for a two-ball scene -- both balls must stay within
+    `threshold` of their OWN measured rest position. `rest_pos` defaults to the original
+    scene_two_balls.xml's `BALL_REST_POS`; pass `BALL_REST_POS_LARGE` for
+    scene_two_balls_large.xml. Returns (both_retained, per-ball distances)."""
+    rest_pos = BALL_REST_POS if rest_pos is None else rest_pos
     dists = {name: np.linalg.norm(data.body(name).xpos - rest)
-             for name, rest in BALL_REST_POS.items()}
+             for name, rest in rest_pos.items()}
     return all(d < threshold for d in dists.values()), dists
 
 
@@ -96,9 +99,36 @@ MIN_BALL_SEPARATION = 0.025  # meters -- below the balls' own 0.03m diameter wou
 MAX_BALL_SEPARATION = 0.065  # meters -- natural range under grasp+scripted motion was 0.037-0.050
 
 
-def ball_separation_ok(data):
+def ball_separation_ok(data, min_sep=None, max_sep=None):
+    """`min_sep`/`max_sep` default to the original scene_two_balls.xml's bounds; pass
+    `MIN/MAX_BALL_SEPARATION_LARGE` for scene_two_balls_large.xml."""
+    min_sep = MIN_BALL_SEPARATION if min_sep is None else min_sep
+    max_sep = MAX_BALL_SEPARATION if max_sep is None else max_sep
     dist = np.linalg.norm(data.body("ball1").xpos - data.body("ball2").xpos)
-    return MIN_BALL_SEPARATION <= dist <= MAX_BALL_SEPARATION, dist
+    return min_sep <= dist <= max_sep, dist
+
+
+# Stage 6 continued: user -- "maybe relative larger balls, so finger movement can make ball push
+# each other and pass by". scene_two_balls_large.xml, 0.02m radius balls (up from 0.015m).
+# BAODING_GRASP_TARGET's own curl/spread (0.95/0.5) was tuned for the SMALLER balls' geometry;
+# re-searched for this size and found something simpler works: a gentler curl (0.85) with NO
+# spread needed (0.0) already brings the bigger balls into genuine contact (confirmed via
+# data.contact -- ball1<->ball2 registers) and holds rock-stable for 10+ seconds (position drift
+# <0.001m), unlike the smaller balls which needed the special BAODING_CONTACT_TARGET just to
+# touch at all.
+TWO_BALL_SCENE_LARGE = "assets/scene_two_balls_large.xml"
+BAODING_GRASP_TARGET_LARGE = make_grasp_target(curl_frac=0.85, thumb_base=1.3, base_spread=0.0)
+# Measured directly, same discipline as BALL_REST_POS: open-hand passive settle position (at
+# settle_object's standard 1.0s duration -- the open-hand pose doesn't reach a true equilibrium
+# at this ball size, it keeps creeping slowly off the palm indefinitely, but every real use
+# immediately follows settle_object with a grasp, which DOES hold rock-stable, so this snapshot
+# is the right "rest" reference for retention purposes, same role BALL_REST_POS already plays).
+BALL_REST_POS_LARGE = {
+    "ball1": np.array([0.0014, -0.0210, 0.0307]),
+    "ball2": np.array([0.0014, 0.0210, 0.0307]),
+}
+MIN_BALL_SEPARATION_LARGE = 0.030  # meters -- below the balls' own 0.04m diameter means overlap
+MAX_BALL_SEPARATION_LARGE = 0.075  # meters -- touching is ~0.04m; generous headroom above that
 
 
 # User: "the current baoding .gif show two are separated with distance, no contact, no push each
@@ -192,6 +222,33 @@ def fingertip_contact_count(model, data, object_geom_id=None, object_body_name="
             touching.add(c.geom2)
         elif c.geom2 == object_geom_id and c.geom1 in tip_geom_ids:
             touching.add(c.geom1)
+    return len(touching)
+
+
+def hand_contact_count(model, data, object_body_name):
+    """Number of DISTINCT hand bodies (any link, not just fingertip capsules -- see
+    `fingertip_contact_count` for that stricter version) currently in contact with
+    `object_body_name`. Added for Stage 6's larger-ball RL env after finding that
+    `fingertip_contact_count` alone is too marginal for a long static hold: measured directly
+    that even a completely motionless `BAODING_GRASP_TARGET_LARGE` grasp genuinely loses one
+    fingertip contact (not flickering noise -- a real, permanent transition) after ~6.5 seconds
+    of soft-actuator creep, which would fail every episode regardless of policy behavior. A ball
+    resting against a proximal/medial segment plus the palm is still meaningfully "held" even
+    without fingertip-specific contact, and this is far more robust against that creep since
+    there's much more redundant contact area to lose before the count actually drops."""
+    object_geom_id = _collision_geom_id(model, object_body_name)
+    other_ball = "ball2" if object_body_name == "ball1" else "ball1"
+    other_geom_id = _collision_geom_id(model, other_ball) if other_ball in (
+        "ball1", "ball2") else None
+    touching = set()
+    for i in range(data.ncon):
+        c = data.contact[i]
+        for a, b in ((c.geom1, c.geom2), (c.geom2, c.geom1)):
+            if a == object_geom_id and b != other_geom_id:
+                body_id = model.geom_bodyid[b]
+                body_name = mj.mj_id2name(model, mj.mjtObj.mjOBJ_BODY, body_id)
+                if body_name != "world":
+                    touching.add(body_id)
     return len(touching)
 
 
@@ -297,3 +354,38 @@ def orbit_wave_ctrl(base_ctrl, amp, phase):
         mod = amp * np.sin(phase + offset)
         c[idx] = np.clip(base_ctrl[idx] + mod * (hi - lo), lo, hi)
     return c
+
+
+# Stage 6, trying "sequenced contact planning" (as opposed to RL) for the two-ball-circulation
+# problem: ff is on ball2's side, rf is on ball1's side (mf sits centered, between the two balls
+# -- see assets/scene_two_balls_large.xml). FF_SLICE/RF_SLICE are each finger's 3 curl joints.
+FF_CURL_SLICE = slice(1, 4)
+RF_CURL_SLICE = slice(9, 12)
+MF_PROXIMAL_IDX = 5
+
+
+def leapfrog_half_cycle(model, data, base_ctrl, release_slice, push_idx, release_amt=0.2,
+                         push_amt=0.25, duration_seconds=0.6, hold_seconds=0.2):
+    """One half of a "leapfrog" attempt at genuine circulation (not a smooth periodic oscillation
+    like twist_ctrl/orbit_wave_ctrl, which settle to a fixed point -- see their own docstrings):
+    partially release one side's grip (`release_slice`, e.g. `RF_CURL_SLICE` to let ball1 roll
+    toward where ball2 was) while the centered mf finger pushes harder (`push_idx`) to nudge the
+    near ball past the other, then returns to `base_ctrl` to re-secure. Calling this twice with
+    roles swapped (release RF+push, then release FF+push) is one full leapfrog cycle.
+
+    **Confirmed (see README Stage 6) this gets real progress (~20-28 degrees per attempt,
+    tuning-dependent) but is NOT yet stable over many repeated cycles** -- every parameter
+    combination tried eventually ejects a ball (separation jumps ~4x in one step) after a handful
+    of cycles. Kept as a documented partial-progress result, the scripted counterpart to the RL
+    approach's own "real but bounded" findings, not deleted despite the instability."""
+    dt = model.opt.timestep
+    n_half = int(duration_seconds / dt)
+    for t in range(n_half):
+        c = base_ctrl.copy()
+        c[release_slice] = base_ctrl[release_slice] * (1 - release_amt)
+        c[push_idx] = min(base_ctrl[push_idx] + push_amt, 1.6)
+        data.ctrl[:] = c
+        mj.mj_step(model, data)
+    data.ctrl[:] = base_ctrl
+    for _ in range(int(hold_seconds / dt)):
+        mj.mj_step(model, data)

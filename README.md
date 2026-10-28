@@ -427,14 +427,83 @@ started after closing out `barrett_wam` (Barrett WAM arm + BarrettHand) and `pan
    Right: the contact-grasp experiment -- a stable wobble, then one ball gets ejected (final
    frame shows only the red ball remaining).</sub></p>
 
-   **Where this stands**: genuine continuous ball-pair circulation has NOT been achieved by any
-   method tried (two scripted primitives, two RL runs, one contact-grasp variant) -- every
-   attempt converges to either a bounded wobble, a one-time partial shift, or an outright failure.
-   The spin-in-place result above is real and easy but answers a different question than the one
-   asked. Real circulation likely needs either (a) a reward explicitly built around completing
-   full revolutions rather than net angle per step, or (b) genuine sequenced multi-finger contact
-   planning (walking each ball around via a deliberate chain of regrasps), which is a
-   substantially bigger undertaking than anything attempted in this session.
+   **Where this stood at that point**: genuine continuous ball-pair circulation not yet achieved
+   by any method tried -- every attempt converged to a bounded wobble, a one-time partial shift,
+   or an outright failure. Real circulation likely needs either (a) a reward explicitly built
+   around completing full revolutions rather than net angle per step, or (b) genuine sequenced
+   multi-finger contact planning (walking each ball around via a deliberate chain of regrasps).
+
+   **User: "proceed with Stage 6 (reward redesign vs. sequenced contact planning), make sure
+   fingers keep two balls in hand, maybe relative larger balls, so finger movement can make ball
+   push each other and pass by, go around and around"** -- explicit direction to try both
+   remaining approaches, plus a concrete design suggestion.
+
+   **Larger balls (`assets/scene_two_balls_large.xml`, 0.02m radius, up from 0.015m) -- a separate
+   scene, not a resize-in-place** (so every number already documented above for the smaller balls
+   stays exactly reproducible). Confirmed directly: at this size a normal curl (~0.85, no special
+   middle-finger retraction) already brings the balls into genuine contact -- `ball1<->ball2`
+   registers in `data.contact` -- and a static hold is rock-stable for 10+ seconds (<0.001m
+   drift), a real improvement over the smaller balls' instability. One real gotcha found and
+   fixed along the way: even a perfectly STATIC grasp genuinely loses one `fingertip_contact_count`
+   contact after ~6.5 seconds (soft-actuator creep, not noise) -- too marginal a signal for a long
+   hold. Added `hand_env.hand_contact_count` (any hand link, not just fingertip capsules) instead,
+   which stayed rock-stable (3-4 contacts per ball) over the same hold.
+
+   **Sequenced contact planning: the "leapfrog" primitive (`hand_env.leapfrog_half_cycle`,
+   `eval_stage6_leapfrog.py`).** Not a smooth periodic oscillation (those settle to a fixed point
+   by construction) -- alternately partially-releases one side's grip while the centered middle
+   finger pushes, trying to nudge each ball past the other in turn. Gets real progress (~20-32
+   degrees over several cycles) but is NOT stable over many repeated cycles -- every parameter
+   combination tried eventually ejects a ball (separation jumps ~4x in one step), typically within
+   8-9 cycles. A genuine, repeatable instability, visible in the GIF below (final frame shows the
+   red ball pushed to the edge of frame).
+
+   <p align="center">
+     <img src="media/stage6_leapfrog.gif" width="360">
+   </p>
+   <p align="center"><sub>The leapfrog scripted sequence -- real progress for several cycles,
+   then one ball gets pushed out.</sub></p>
+
+   **Reward redesign: `BaodingEnvV2` (`rl_env_baoding_v2.py`), two rounds, the best genuine
+   progress in this entire stage.** Two changes motivated directly by what baoding01/02 and the
+   leapfrog experiment showed: (1) **grace periods** instead of instant termination on
+   contact/rate violations (`GRACE_STEPS=15` steps must persist, not one bad step -- position
+   retention, a ball actually ending up far away, still terminates immediately, that's a real
+   failure not a transient) -- motivated by every real-progress scripted attempt passing through
+   brief risky transitional contact states on the way to genuine progress, which the v1 env's
+   instant termination made a risk-averse policy avoid entirely; (2) an explicit **milestone
+   bonus** paid once per episode the first time cumulative orbit crosses each new rotation
+   threshold -- dense per-step reward alone can't distinguish "one shift, then stop" from "keep
+   going" when both earn the same total for the same net displacement.
+
+   - **`baoding_v2_01`** (90-degree milestones, bonus=5.0): **117 degrees**, crossing one
+     milestone, over a 60-second rollout with NO drops (retained throughout, unlike `baoding02`'s
+     eventual decay) -- and this time VISUALLY confirmed as real circulation, not an artifact:
+     rendered frames show the balls genuinely swapping from side-by-side to stacked. Then settles
+     into a permanently stable static hold rather than attempting a second milestone.
+   - **`baoding_v2_02`** (45-degree milestones, bonus=25.0 -- 5x bigger, paid more often, so one
+     full 360-degree lap would net 200 vs. the one-time 8.0 drop penalty): **144 degrees**, 3
+     milestones, same pattern -- real, visible, further progress (worth checking: balls rotate
+     further around than v1's attempt), then another permanently stable static hold.
+
+   <p align="center">
+     <img src="media/stage6_baoding_rl_v2.gif" width="360">
+   </p>
+   <p align="center"><sub>`baoding_v2_02`: genuine ~144 degrees of circulation (balls visibly swap
+   from side-by-side to stacked), then a stable hold rather than continuing.</sub></p>
+
+   **Where this stands now**: both approaches made real, visually-confirmed progress on the
+   larger balls -- the biggest genuine circulation achieved in this entire stage (144 degrees,
+   40% of one lap) -- but neither achieves sustained, repeated, "go around and around"
+   circulation. The pattern is consistent across every method tried (scripted and learned alike):
+   real progress up to roughly 20-150 degrees depending on method, then either an outright failure
+   (leapfrog, the original contact-grasp experiment) or a stable stop (both RL variants). Raising
+   the milestone incentive 5x moved the RL ceiling from 117 to 144 degrees -- real but modest,
+   diminishing-return movement, not a step change, suggesting this isn't simply an
+   under-incentivized exploration problem. A plausible explanation not yet tested: a genuine
+   geometric chokepoint in this hand's finger range around the quarter-to-third-of-a-lap mark,
+   similar in spirit to Stage 3's static-friction-cone ceiling -- confirming or refuting that
+   would be the natural next diagnostic step if this is revisited further.
 
 ## Repository layout
 
@@ -443,6 +512,7 @@ allegro_hand/
 ├── assets/
 │   ├── right_hand.xml, scene_right.xml   # vendored from mujoco_menagerie, see NOTICE.md
 │   ├── scene_two_balls.xml               # Stage 6: right_hand.xml + two spheres, item 6
+│   ├── scene_two_balls_large.xml         # Stage 6: larger-ball variant, item 6
 │   ├── assets/                           # meshes the above MJCF references
 │   ├── LICENSE.wonik_allegro
 │   ├── CHANGELOG.wonik_allegro.md
@@ -469,6 +539,12 @@ allegro_hand/
 ├── demo_stage6_ball_spin.py               # Stage 6: ball-vs-ball rolling-spin GIF, item 6
 ├── eval_stage6_contact_orbit.py           # Stage 6: balls-in-contact orbit experiment, item 6
 ├── demo_stage6_contact_orbit.py           # Stage 6: balls-in-contact orbit GIF, item 6
+├── eval_stage6_leapfrog.py                # Stage 6: sequenced leapfrog orbit attempt, item 6
+├── demo_stage6_leapfrog.py                # Stage 6: leapfrog attempt GIF, item 6
+├── rl_env_baoding_v2.py                   # Stage 6: BaodingEnvV2 (grace periods + milestones), item 6
+├── train_stage6_baoding_rl_v2.py          # Stage 6: PPO training script (v2), item 6
+├── eval_stage6_baoding_rl_v2.py           # Stage 6: v2 rollout eval, item 6
+├── demo_stage6_baoding_rl_v2.py           # Stage 6: v2 rollout GIF, item 6
 ├── media/
 │   ├── stage1_kinematic_sweep.gif
 │   ├── stage2_grasp_stability.gif
@@ -478,6 +554,8 @@ allegro_hand/
 │   ├── stage6_baoding_balls.gif
 │   ├── stage6_ball_spin.gif
 │   ├── stage6_baoding_rl.gif
-│   └── stage6_contact_orbit.gif
+│   ├── stage6_contact_orbit.gif
+│   ├── stage6_leapfrog.gif
+│   └── stage6_baoding_rl_v2.gif
 └── README.md
 ```

@@ -1,0 +1,44 @@
+<mujoco model="right_allegro_hand scene (two large balls)">
+  <include file="right_hand.xml"/>
+
+  <visual>
+    <rgba haze="0.15 0.25 0.35 1"/>
+    <quality shadowsize="8192"/>
+    <global azimuth="130" elevation="-40"/>
+  </visual>
+
+  <asset>
+    <texture type="skybox" builtin="gradient" rgb1="0.3 0.5 0.7" rgb2="0 0 0" width="512" height="3072"/>
+    <texture type="2d" name="groundplane" builtin="checker" mark="edge" rgb1="0.2 0.3 0.4" rgb2="0.1 0.2 0.3"
+      markrgb="0.8 0.8 0.8" width="300" height="300"/>
+    <material name="groundplane" texture="groundplane" texuniform="true" texrepeat="5 5" reflectance="0.2"/>
+  </asset>
+
+  <worldbody>
+    <light pos="0 0 1"/>
+    <light pos="0.3 0 1.5" dir="0 0 -1" directional="true"/>
+    <geom name="floor" pos="0 0 -0.1" size="0 0 0.05" type="plane" material="groundplane"/>
+    <!-- Stage 6 continued: user -- "maybe relative larger balls, so finger movement can make
+         ball push each other and pass by, go around and around". Separate scene from
+         scene_two_balls.xml (0.015m radius) rather than resizing it in place, so every already-
+         documented finding there (BAODING_CONTACT_TARGET's exact separation numbers, the
+         ejection GIF, etc.) stays exactly reproducible. 0.02m radius (up from 0.015m): confirmed
+         directly that at this size a normal curl (~0.85, no special finger retraction) leaves
+         barely any gap for a finger to wedge between them, so they settle into near-contact
+         (ball1<->ball2 geom contact registers) under a plain grasp, unlike the smaller balls
+         which needed BAODING_CONTACT_TARGET's special middle-finger-retracted pose to touch at
+         all. Offset +-0.021m in y at spawn so they don't start interpenetrating. -->
+    <body name="ball1" pos="0 -0.021 0.1">
+      <freejoint/>
+      <geom type="sphere" size="0.005" pos="0.016 0 0" rgba="1 1 1 1" contype="0" conaffinity="0"/>
+      <geom type="sphere" size="0.02" rgba="0.8 0.3 0.3 1" condim="6" priority="1"
+        friction="0.7 0.002 0.002"/>
+    </body>
+    <body name="ball2" pos="0 0.021 0.1">
+      <freejoint/>
+      <geom type="sphere" size="0.005" pos="0.016 0 0" rgba="1 1 1 1" contype="0" conaffinity="0"/>
+      <geom type="sphere" size="0.02" rgba="0.3 0.3 0.8 1" condim="6" priority="1"
+        friction="0.7 0.002 0.002"/>
+    </body>
+  </worldbody>
+</mujoco>

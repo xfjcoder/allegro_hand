@@ -40,10 +40,10 @@ def main():
     renderer = mj.Renderer(model, height=240, width=320)
     cam = mj.MjvCamera()
     cam.type = mj.mjtCamera.mjCAMERA_FREE
-    cam.lookat[:] = [0.0, 0.0, 0.03]
-    cam.distance = 0.35
-    cam.elevation = -20
-    cam.azimuth = 120
+    cam.lookat[:] = [0.0, 0.0, 0.035]
+    cam.distance = 0.2
+    cam.elevation = -50
+    cam.azimuth = 200
 
     frames = []
     step_count = [0]

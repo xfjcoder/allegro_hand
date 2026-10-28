@@ -613,6 +613,40 @@ started after closing out `barrett_wam` (Barrett WAM arm + BarrettHand) and `pan
    <p align="center"><sub>Updated: `four_finger_orbit_ctrl` with the upright-thumb grasp --
    -54.6 degrees, rock-stable, thumb visibly less curled over the balls than before.</sub></p>
 
+   **User: "try the ratchet version on all four fingers, from latest .gif, the thumb seems not
+   upright enough, still block balls pass by each other"** -- the non-periodic test proposed
+   above, plus a direct follow-up on the thumb. Built `hand_env.four_finger_ratchet_cycle`: a
+   step/hold sequence (not a sinusoid) that advances through ff/mf/rf/th in order, holding each
+   digit "open" (reduced curl, swung laterally clear) for `dwell_seconds` while the other three
+   sit at the grasp target, then moves on -- unlike every sin/cos-based primitive so far, no digit
+   is forced to smoothly retrace its own path back through "closed" every cycle.
+
+   A plain amplitude sweep (same amp_lat/amp_curl for all 4 digits) actually did WORSE than
+   `four_finger_orbit_ctrl`'s sinusoid, topping out around -24 degrees stable (or -40ish before
+   ejecting at higher amplitude) -- the ratchet structure alone wasn't the missing piece. The
+   second part of the user's observation was: giving the thumb its OWN, much deeper release
+   amplitude (`thumb_amp_curl`, independent of the fingers' `amp_curl`) during its own dwell
+   window, instead of forcing all four digits to share one amplitude. That was the actual fix:
+   amp_lat=0.3/amp_curl=0.3/dwell=0.4s with `thumb_amp_curl=0.6` (double the fingers' own 0.3)
+   converges to **-62.9 degrees**, rock-stable over 60 cycles (2+ minutes) -- the best result in
+   this entire stage, ~15% better than the sinusoidal version, and visually confirmed: the thumb
+   visibly swings clear during its own release window (a real gap opens at the top of the grasp
+   in the rendered frames) rather than sitting there curled the whole time.
+
+   <p align="center">
+     <img src="media/stage6_four_finger_ratchet.gif" width="360">
+   </p>
+   <p align="center"><sub>`four_finger_ratchet_cycle` with a deep thumb-only release: -62.9
+   degrees, rock-stable, thumb visibly opens clear during its own dwell window.</sub></p>
+
+   **Still the same ceiling, from a fourth structurally distinct mechanism**: periodic 2-digit
+   (`diagonal_stroke_ctrl`), periodic 4-digit (`four_finger_orbit_ctrl`), and now non-periodic
+   (step/hold) 4-digit all converge to a bounded fixed point in roughly the same 35-63 degree
+   range rather than continuing -- each user-directed fix (lateral motion, all 4 digits, ratchet
+   structure, deeper thumb release) measurably raised the ceiling, but none broke through to
+   sustained circulation. This is now 4-for-4 evidence for the geometric-chokepoint hypothesis
+   across both scripted and learned (RL) methods alike.
+
 ## Repository layout
 
 ```
@@ -657,6 +691,8 @@ allegro_hand/
 ├── demo_stage6_diagonal_stroke.py         # Stage 6: diagonal-stroke attempt GIF, item 6
 ├── eval_stage6_four_finger_orbit.py       # Stage 6: 4-digit rotating-gate orbit attempt, item 6
 ├── demo_stage6_four_finger_orbit.py       # Stage 6: four-finger-orbit attempt GIF, item 6
+├── eval_stage6_four_finger_ratchet.py     # Stage 6: non-periodic 4-digit ratchet attempt, item 6
+├── demo_stage6_four_finger_ratchet.py     # Stage 6: four-finger-ratchet attempt GIF, item 6
 ├── media/
 │   ├── stage1_kinematic_sweep.gif
 │   ├── stage2_grasp_stability.gif
@@ -671,6 +707,7 @@ allegro_hand/
 │   ├── stage6_baoding_rl_v2.gif
 │   ├── stage6_diagonal_stroke.gif
 │   ├── stage6_four_finger_orbit_v1.gif
-│   └── stage6_four_finger_orbit.gif
+│   ├── stage6_four_finger_orbit.gif
+│   └── stage6_four_finger_ratchet.gif
 └── README.md
 ```

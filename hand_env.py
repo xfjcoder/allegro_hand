@@ -454,6 +454,60 @@ def four_finger_orbit_ctrl(base_ctrl, amp_lat, amp_curl, phase, thumb_amp_base=0
     return c
 
 
+FOUR_DIGIT_ORDER = ("ff", "mf", "rf", "th")
+
+
+def four_finger_ratchet_ctrl(base_ctrl, active_digit, amp_lat, amp_curl, engage_extra=0.0,
+                              thumb_amp_curl=None):
+    """Stage 6 continued -- user: "try the ratchet version on all four fingers". Every primitive
+    so far (`diagonal_stroke_ctrl`, `four_finger_orbit_ctrl`) drives a continuous sin/cos sweep,
+    which by construction must pass back through every digit's OWN starting configuration once
+    per cycle -- the natural explanation for why they all converge to a bounded fixed point rather
+    than continuing (same root cause as `twist_ctrl`'s original ceiling, see its docstring). This
+    instead holds exactly ONE digit "open" (curl reduced by `amp_curl`, base/lateral swung by
+    `amp_lat`) at a time while the other three sit at `base_ctrl` (optionally gripping harder via
+    `engage_extra`) -- a step/square-wave, not a sinusoid, so advancing `active_digit` through
+    `FOUR_DIGIT_ORDER` never has to retrace a digit's own path back through "closed" THEN back to
+    "open" within a single cycle the way the sinusoidal versions do."""
+    c = base_ctrl.copy()
+    lo1, hi1 = FINGER_CURL_RANGES[1]
+    if engage_extra:
+        for name in FOUR_DIGIT_BASE_IDX:
+            if name != active_digit:
+                curl_idx = FOUR_DIGIT_CURL_IDX[name]
+                c[curl_idx] = np.clip(base_ctrl[curl_idx] + engage_extra * (hi1 - lo1), lo1, hi1)
+    if active_digit in FOUR_DIGIT_BASE_IDX:
+        base_idx = FOUR_DIGIT_BASE_IDX[active_digit]
+        curl_idx = FOUR_DIGIT_CURL_IDX[active_digit]
+        sign = -1.0 if active_digit == "rf" else 1.0
+        c[base_idx] = base_ctrl[base_idx] + sign * amp_lat
+        c[curl_idx] = np.clip(base_ctrl[curl_idx] - amp_curl * (hi1 - lo1), lo1, hi1)
+    else:
+        lo_t, hi_t = THUMB_CURL_RANGES[1]
+        tc = amp_curl if thumb_amp_curl is None else thumb_amp_curl
+        c[13] = np.clip(base_ctrl[13] - tc * (hi_t - lo_t), lo_t, hi_t)
+    return c
+
+
+def four_finger_ratchet_cycle(model, data, base_ctrl, amp_lat, amp_curl, dwell_seconds=0.3,
+                               engage_extra=0.0, order=FOUR_DIGIT_ORDER, thumb_amp_curl=None):
+    """Drives one full ratchet cycle: steps `active_digit` through `order` (default
+    `FOUR_DIGIT_ORDER`, ff/mf/rf/th), each held for `dwell_seconds` via
+    `four_finger_ratchet_ctrl`, then returns to `base_ctrl`. `thumb_amp_curl`, if given,
+    overrides `amp_curl` for just the thumb's own release depth -- added after the user's "the
+    thumb seems not upright enough, still block balls" to test a deeper thumb-only release
+    without changing the fingers' own amplitudes."""
+    dt = model.opt.timestep
+    n_dwell = int(dwell_seconds / dt)
+    for digit in order:
+        ctrl = four_finger_ratchet_ctrl(base_ctrl, digit, amp_lat, amp_curl, engage_extra,
+                                         thumb_amp_curl)
+        for _ in range(n_dwell):
+            data.ctrl[:] = ctrl
+            mj.mj_step(model, data)
+    data.ctrl[:] = base_ctrl
+
+
 def leapfrog_half_cycle(model, data, base_ctrl, release_slice, push_idx, release_amt=0.2,
                          push_amt=0.25, duration_seconds=0.6, hold_seconds=0.2):
     """One half of a "leapfrog" attempt at genuine circulation (not a smooth periodic oscillation

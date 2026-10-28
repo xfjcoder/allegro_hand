@@ -608,10 +608,11 @@ started after closing out `barrett_wam` (Barrett WAM arm + BarrettHand) and `pan
    being purely dynamic (during the orbit motion itself), not structural.
 
    <p align="center">
-     <img src="media/stage6_four_finger_orbit.gif" width="360">
+     <img src="media/stage6_four_finger_orbit_v2.gif" width="360">
    </p>
    <p align="center"><sub>Updated: `four_finger_orbit_ctrl` with the upright-thumb grasp --
-   -54.6 degrees, rock-stable, thumb visibly less curled over the balls than before.</sub></p>
+   -54.6 degrees, rock-stable, thumb visibly less curled over the balls than before. (Superseded
+   below by an even more upright thumb.)</sub></p>
 
    **User: "try the ratchet version on all four fingers, from latest .gif, the thumb seems not
    upright enough, still block balls pass by each other"** -- the non-periodic test proposed
@@ -646,6 +647,28 @@ started after closing out `barrett_wam` (Barrett WAM arm + BarrettHand) and `pan
    structure, deeper thumb release) measurably raised the ceiling, but none broke through to
    sustained circulation. This is now 4-for-4 evidence for the geometric-chokepoint hypothesis
    across both scripted and learned (RL) methods alike.
+
+   **User: "4 fingers orbit is better way, try the thumb upright little more, and 4 finger
+   message balls across each other in hand palm"** -- preference for the periodic
+   `four_finger_orbit_ctrl` over the ratchet, plus pushing the thumb further upright still.
+   Re-swept amp_lat/amp_curl at thumb curl_frac values between the known-safe 0.6 and the
+   previous 0.75, and found `curl_frac=0.72` (more upright than 0.75) with amp_lat=0.4/
+   amp_curl=0.15 does slightly BETTER again: **-55.8 degrees**, rock-stable over 70 cycles (140+
+   seconds) -- confirming this wasn't a tradeoff against the earlier result, just a better point
+   nearby. `BAODING_GRASP_TARGET_LARGE_UPRIGHT_THUMB` and the eval/demo scripts' defaults are
+   updated to this value; the 0.75 version is preserved as
+   `media/stage6_four_finger_orbit_v2.gif` above. Rendered frames confirm the "massage... across
+   each other in hand palm" motion directly: red and blue migrate from side-by-side at the start
+   of a cycle to nearly stacked over the palm center by the end, with each digit's turn at the
+   rotating gate visibly pushing the near ball through -- the mechanism IS four fingers taking
+   turns driving the balls across each other in the palm, not just spinning them in place.
+
+   <p align="center">
+     <img src="media/stage6_four_finger_orbit.gif" width="360">
+   </p>
+   <p align="center"><sub>Current best scripted result: `four_finger_orbit_ctrl` with
+   curl_frac=0.72 thumb -- -55.8 degrees, rock-stable, balls visibly migrate from side-by-side to
+   stacked over the palm center.</sub></p>
 
 ## Repository layout
 
@@ -707,6 +730,7 @@ allegro_hand/
 │   ├── stage6_baoding_rl_v2.gif
 │   ├── stage6_diagonal_stroke.gif
 │   ├── stage6_four_finger_orbit_v1.gif
+│   ├── stage6_four_finger_orbit_v2.gif
 │   ├── stage6_four_finger_orbit.gif
 │   └── stage6_four_finger_ratchet.gif
 └── README.md

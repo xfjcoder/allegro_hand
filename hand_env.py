@@ -158,14 +158,17 @@ BAODING_CONTACT_TARGET[4:8] = make_grasp_target(curl_frac=0.0, thumb_base=1.3,
 # -6 to -8 degrees, same magnitude as the ORIGINAL ff/rf-only diagonal_stroke_ctrl) and
 # curl_frac=0.6 (-32 degrees) -- below the cliff the thumb loses ball contact entirely (confirmed
 # via data.contact) and stops contributing any driving force, not just stops blocking. Above the
-# cliff, curl_frac=0.75 (visibly less curled / more upright than the original 0.85) does
-# slightly BETTER than 0.85 itself once amp_lat/amp_curl are re-swept for this geometry:
-# amp_lat=0.35/amp_curl=0.12 converges to -54.6 degrees, rock-stable over 70 cycles (over 2
-# minutes) -- an 18% improvement over the fully-curled thumb's -46.6 degree ceiling, while also
-# being a visibly more upright thumb posture, matching what the user asked for.
+# cliff, curl_frac=0.75 did slightly BETTER than 0.85 once amp_lat/amp_curl were re-swept
+# (-54.6 degrees).
+#
+# User, after also trying the ratchet variant: "4 fingers orbit is better way, try the thumb
+# upright little more". Re-swept amp_lat/amp_curl at curl_frac values between 0.6 and 0.75 and
+# found curl_frac=0.72 (even more upright than 0.75) with amp_lat=0.4/amp_curl=0.15 does
+# slightly BETTER again: -55.8 degrees, rock-stable over 70 cycles (confirmed the same way as
+# every curl_frac tested) -- more upright AND a small further improvement, not a tradeoff.
 BAODING_GRASP_TARGET_LARGE_UPRIGHT_THUMB = BAODING_GRASP_TARGET_LARGE.copy()
 BAODING_GRASP_TARGET_LARGE_UPRIGHT_THUMB[13:16] = make_grasp_target(
-    curl_frac=0.75, thumb_base=1.3, base_spread=0.0)[13:16]
+    curl_frac=0.72, thumb_base=1.3, base_spread=0.0)[13:16]
 
 
 def settle_object(model, data, settle_seconds=1.0):

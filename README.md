@@ -707,6 +707,60 @@ started after closing out `barrett_wam` (Barrett WAM arm + BarrettHand) and `pan
    `BAODING_GRASP_TARGET_LARGE_CROSSOVER` (mf curl loosened 0.85 -> 0.4) -- ball1 -64 degrees,
    ball2 -172 degrees, both retained, measured per-ball (not pair-vector) this time.</sub></p>
 
+   **User: "can we put rl on four balls orbiting scheme"** -> clarified to mean RL trained on the
+   existing 2-ball/4-finger crossover scheme above, not literally four balls (this hand's palm is
+   too narrow, ~4cm in the depth direction, to realistically fit four same-size balls). Built
+   `BaodingEnvV3` (`rl_env_baoding_v3.py`): starts from `BAODING_GRASP_TARGET_LARGE_CROSSOVER`
+   instead of V2's grasp, and -- learning directly from this same stage's own scripted-search
+   lesson -- rewards and milestones are keyed to each ball's OWN angle (`ball_angle_rad`), crediting
+   only the SMALLER-magnitude, SAME-DIRECTION step of the two balls each tick, so a policy can't
+   cheat by spinning one ball while the other sits pinned (the exact RL analog of the pair-vector
+   bug found above). Five training rounds, each fixing a specific failure the previous one actually
+   exhibited:
+
+   - **baoding_v3_01**: real same-direction circulation (ball1=-127deg, ball2=-97deg, ratio 1.3x --
+     already better-balanced than the scripted result's 2.7x), but the policy stops moving at
+     t~16s and the frozen pose it happens to land on isn't a true equilibrium -- `dist1` slowly
+     creeps until it crosses the hard 0.05m retention cutoff at t=18.2s. (Confirmed separately that
+     the scripted grasp's OWN frozen pose is rock-stable for 28s+ when motionless -- this was
+     policy-specific, not an environment flaw.)
+   - **baoding_v3_02/03** (added a margin penalty near the retention cutoff, then a flat idle-time
+     tax): survived longer (49.7s, then regressed to 15.2s) but a REAL bug surfaced -- milestones
+     were keyed to `min(|cum1|, |cum2|)`, the raw per-ball cumulative angle, not the
+     same-direction-MATCHED amount the per-step reward actually credits. The policy found it could
+     bank milestone bonus via OPPOSITE-direction motion (e.g. ball1=-36deg, ball2=+65deg) that
+     earned zero per-step reward -- a reward hack, not real circulation.
+   - **Fix**: milestones now key off `self._matched_cum`, the same quantity the per-step reward
+     uses. **baoding_v3_04**: genuine same-direction circulation again (ball1=82deg, ball2=129deg,
+     ratio 1.57x), surviving to t=39s -- better than v3_01, and this time via a real fix rather than
+     a parameter tweak.
+   - Traced v3_04's eventual stop to t~16s -- PAST this env's own 10-second/500-step training
+     episode, i.e. genuinely untested territory the policy never had to handle during training.
+     Doubled `EPISODE_SECONDS` to 20s so a trained policy actually lives with the consequences of
+     stopping early. **baoding_v3_05**: survives a full 60-second eval rock-solid (`retained=True`
+     throughout), and even past that -- 74.4 seconds before an eventual slow position-drift failure
+     of the same kind as before, nearly double v3_04's survival time. Final numbers: **ball1=80
+     degrees, ball2=119 degrees (ratio 1.49x)** -- still better-balanced circulation than the
+     scripted crossover's 2.7x split, and (unlike every scripted attempt or baoding_v2_02) the
+     policy periodically re-engages rather than freezing permanently, which is most of why it
+     survives this much longer.
+
+   <p align="center">
+     <img src="media/stage6_baoding_rl_v3.gif" width="360">
+   </p>
+   <p align="center"><sub>`baoding_v3_05`: genuine same-direction circulation, ball1=80 degrees,
+   ball2=119 degrees, sustained 74+ seconds (longest of any RL attempt in this stage) before an
+   eventual slow positional-drift failure.</sub></p>
+
+   **Where this stands**: RL on the crossover scheme now produces the best-BALANCED circulation in
+   this entire stage (1.49-1.72x ratio between the two balls' own progress, vs. 2.7x for the
+   scripted version) and the longest-surviving RL result (74s, vs. baoding_v2_02's 60s -- though
+   v2_02's number came from a pair-vector metric now known to be an unreliable measure of genuine
+   per-ball circulation, so the two aren't directly comparable). Still not indefinite, hard
+   "go-around-and-around forever" sustain -- every method tried across this entire stage eventually
+   hits some version of the same wall, which keeps accumulating as evidence for a real structural
+   limit in this hand/ball/grasp combination rather than a reward-engineering gap.
+
 ## Repository layout
 
 ```
@@ -753,6 +807,10 @@ allegro_hand/
 ├── demo_stage6_four_finger_orbit.py       # Stage 6: four-finger-orbit attempt GIF, item 6
 ├── eval_stage6_four_finger_ratchet.py     # Stage 6: non-periodic 4-digit ratchet attempt, item 6
 ├── demo_stage6_four_finger_ratchet.py     # Stage 6: four-finger-ratchet attempt GIF, item 6
+├── rl_env_baoding_v3.py                   # Stage 6: BaodingEnvV3 (crossover grasp + per-ball matched reward), item 6
+├── train_stage6_baoding_rl_v3.py          # Stage 6: PPO training script (v3), item 6
+├── eval_stage6_baoding_rl_v3.py           # Stage 6: v3 rollout eval, item 6
+├── demo_stage6_baoding_rl_v3.py           # Stage 6: v3 rollout GIF, item 6
 ├── media/
 │   ├── stage1_kinematic_sweep.gif
 │   ├── stage2_grasp_stability.gif
@@ -770,6 +828,7 @@ allegro_hand/
 │   ├── stage6_four_finger_orbit_v2.gif
 │   ├── stage6_four_finger_orbit_v3.gif
 │   ├── stage6_four_finger_orbit.gif
-│   └── stage6_four_finger_ratchet.gif
+│   ├── stage6_four_finger_ratchet.gif
+│   └── stage6_baoding_rl_v3.gif
 └── README.md
 ```

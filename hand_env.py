@@ -51,13 +51,32 @@ def balls_retained(data, threshold=0.05, rest_pos=None):
 
 
 def ball_pair_angle_rad(data):
-    """Angle (world XY plane) of the vector from ball1 to ball2 -- this project's orbit metric:
-    sustained CHANGE in this angle over time means the pair is actually circulating around each
-    other (real Baoding-ball motion), not just jittering in place. Unwrap/accumulate step-to-step
-    deltas the same way Stage 5 accumulates `twist_angle_rad`, for the same reason (a raw angle
-    alone can't distinguish one full orbit from zero)."""
+    """Angle (world XY plane) of the vector from ball1 to ball2 -- this project's ORIGINAL orbit
+    metric: sustained CHANGE in this angle over time means the pair is actually circulating around
+    each other (real Baoding-ball motion), not just jittering in place. Unwrap/accumulate
+    step-to-step deltas the same way Stage 5 accumulates `twist_angle_rad`, for the same reason (a
+    raw angle alone can't distinguish one full orbit from zero).
+
+    **Known pitfall, found via user observation (see README Stage 6, the -55.8deg "massage"
+    correction)**: this metric can drift substantially from an ASYMMETRIC wobble where only ONE
+    ball moves and the other sits still -- the pair vector's angle still changes even though
+    there's no real circulation. Use `ball_angle_rad` per-ball instead when the actual question is
+    "is each ball individually going around", not just "has the vector between them rotated"."""
     v = data.body("ball2").xpos - data.body("ball1").xpos
     return np.arctan2(v[1], v[0])
+
+
+PALM_CENTER_LARGE = np.array([0.0, 0.0, 0.035])
+
+
+def ball_angle_rad(data, name, center=None):
+    """Angle (world XY plane) of `name`'s body position around `center` (defaults to
+    `PALM_CENTER_LARGE`) -- each ball's OWN angular position, the per-ball complement to
+    `ball_pair_angle_rad`. Unwrap/accumulate the same way, per ball, to check whether a ball is
+    genuinely circulating rather than just contributing to pair-vector drift."""
+    center = PALM_CENTER_LARGE if center is None else center
+    p = data.body(name).xpos
+    return np.arctan2(p[1] - center[1], p[0] - center[0])
 
 
 def make_grasp_target(curl_frac, thumb_base, base_spread=0.0):

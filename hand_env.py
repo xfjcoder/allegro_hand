@@ -171,6 +171,45 @@ BAODING_GRASP_TARGET_LARGE_UPRIGHT_THUMB[13:16] = make_grasp_target(
     curl_frac=0.72, thumb_base=1.3, base_spread=0.0)[13:16]
 
 
+# Stage 6 continued: user, watching the -55.8 degree GIF -- "finger are moving, but not in a way
+# to push balls pass cross each other, the thumb only hold on the ball, instead to move balls
+# around". Investigated with a per-BALL (not per-pair) orbit metric -- each ball's own angular
+# position around the palm center, individually unwrapped/accumulated, instead of
+# `ball_pair_angle_rad`'s pair-vector angle. This exposed that the previous "-55.8 degree" number
+# was almost entirely ball1 wobbling in its own ~20-50 degree arc near ff: ball2's own cumulative
+# angle was only -11 degrees over the same 6 cycles that gave ball1 -60 -- the pair metric was
+# drifting from the ASYMMETRY between the two balls' motion, not genuine circulation of the pair.
+# User's visual read was correct; the previous "visually verified massage" claim was not (it also
+# traced to a diagnostic bug -- geom names are unset in this model, so an early contact check
+# matching on geom name silently always returned zero and was never actually confirming anything;
+# fixed by matching on `model.geom_bodyid` -> body name instead).
+#
+# With the body-name-correct contact check, `data.contact` during the orbit shows ball2 almost
+# never fully released: it sits in a persistent 3-digit pocket (mf + rf + thumb + palm) for most
+# of the cycle, while ball1 is touched by ff alone. The code comment above (and the original
+# "ff is on ball2's side, rf is on ball1's side" assumption `FOUR_DIGIT_PHASE_OFFSET` was built on)
+# has this backwards for the large-ball scene: ff is ball1's only digit; mf/rf/th all cluster
+# around ball2. Re-synchronizing mf/rf/th into a single shared "open" phase (a true 2-sided gate
+# matching this geometry) made things WORSE (both balls near 0 degrees cum) -- simultaneous release
+# removes the transitional quadrature push entirely instead of actually freeing the ball. Boosting
+# ff's own amplitude, or re-spacing mf/rf/th's relative phase offsets, didn't move ball2 either --
+# it stayed pinned regardless, pointing at the STATIC grasp (not the dynamic modulation) as the
+# real cause: mf's resting curl (0.85, inherited unchanged from BAODING_GRASP_TARGET_LARGE) alone
+# is tight enough to cage ball2 no matter how mf/rf/th are phased.
+#
+# Fix: loosen mf's own resting curl_frac (0.85 -> 0.4, ff/rf/th unchanged). Re-ran the per-ball
+# metric over 40-50 cycles (80-100 seconds): ball2_cum reaches -168 degrees (vs -11 before) and
+# ball1_cum reaches -64 degrees, BOTH balls retained, separation rock-stable at ~0.0397-0.0400m
+# (well inside the 0.030-0.075m retention band) -- the two balls are now unequal amounts of real
+# rotation, i.e. genuinely changing position relative to each other (not a rigid pair spinning
+# together), which is what "pass by each other" actually requires. Re-enabling the thumb's own
+# active quadrature term (thumb_amp_base=0.3, thumb_amp_curl=0.25) on top of this pushes ball2
+# further to -172 degrees, still a clean monotonic convergence with no instability.
+BAODING_GRASP_TARGET_LARGE_CROSSOVER = BAODING_GRASP_TARGET_LARGE_UPRIGHT_THUMB.copy()
+BAODING_GRASP_TARGET_LARGE_CROSSOVER[5:8] = make_grasp_target(
+    curl_frac=0.4, thumb_base=1.3, base_spread=0.0)[5:8]
+
+
 def settle_object(model, data, settle_seconds=1.0):
     """Holds the hand open (ctrl=0) for settle_seconds so the included free-floating object
     falls from its spawn position ([0,0,0.1], per scene_right.xml) into its passive resting

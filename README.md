@@ -657,18 +657,55 @@ started after closing out `barrett_wam` (Barrett WAM arm + BarrettHand) and `pan
    seconds) -- confirming this wasn't a tradeoff against the earlier result, just a better point
    nearby. `BAODING_GRASP_TARGET_LARGE_UPRIGHT_THUMB` and the eval/demo scripts' defaults are
    updated to this value; the 0.75 version is preserved as
-   `media/stage6_four_finger_orbit_v2.gif` above. Rendered frames confirm the "massage... across
-   each other in hand palm" motion directly: red and blue migrate from side-by-side at the start
-   of a cycle to nearly stacked over the palm center by the end, with each digit's turn at the
-   rotating gate visibly pushing the near ball through -- the mechanism IS four fingers taking
-   turns driving the balls across each other in the palm, not just spinning them in place.
+   `media/stage6_four_finger_orbit_v2.gif` above. (Superseded below -- the "massage across the
+   palm" read of the rendered frames turned out not to hold up under a more direct per-ball check.)
+
+   <p align="center">
+     <img src="media/stage6_four_finger_orbit_v3.gif" width="360">
+   </p>
+   <p align="center"><sub>`four_finger_orbit_ctrl` with curl_frac=0.72 thumb -- -55.8 degrees on
+   the pair-vector metric, rock-stable. (Preserved; see below for why this number was
+   misleading.)</sub></p>
+
+   **User: "finger are moving, but not in a way to push balls pass cross each other, the thumb
+   only hold on the ball, instead to move balls around"** -- this directly contradicted the
+   "massage across the palm" claim above, so it was checked properly instead of re-asserted.
+   Two things were wrong with the earlier verification: (1) the pair-vector metric
+   (`ball_pair_angle_rad`) can drift from an ASYMMETRIC wobble between the two balls even when
+   neither one is actually circulating -- tracking each ball's own angular position around the
+   palm center separately showed the "-55.8 degree" number was almost entirely ball1 wobbling in
+   its own ~20-50 degree arc near ff, while ball2's own cumulative angle was only -11 degrees over
+   the same stretch; (2) a `data.contact` audit built to check this was itself silently broken --
+   this model's geoms have no names (`mj_id2name` on geom returns `None` for all but one of them),
+   so an earlier check matching on geom name always returned zero contacts and nothing was ever
+   actually being confirmed. Fixed by matching on `model.geom_bodyid` -> body name instead.
+
+   With a working contact audit, the real picture: ball2 sits in a near-permanent 3-digit pocket
+   (mf + rf + thumb + palm) for most of the cycle, while ball1 is touched by ff alone. The
+   `FOUR_DIGIT_PHASE_OFFSET` rotating-gate design (and the code comment it was based on, "ff is on
+   ball2's side, rf is on ball1's side") had the geometry backwards for this scene -- ff is
+   actually ball1's only digit; mf/rf/th all cluster on ball2's side. Re-synchronizing mf/rf/th
+   into a single shared "open" phase (a gate matching this real 1-vs-3 geometry) made things
+   *worse* (both balls near 0 degrees cumulative) -- simultaneous release removes the transitional
+   quadrature push instead of freeing the ball. Boosting ff's own amplitude, or re-spacing mf/rf/
+   th's relative phases, didn't move ball2 either -- it stayed pinned regardless of the dynamic
+   modulation, pointing at the STATIC grasp as the actual cause: mf's resting curl (0.85,
+   inherited unchanged this whole time) is tight enough on its own to cage ball2 no matter how
+   mf/rf/th are phased.
+
+   Fix: loosen mf's own resting curl_frac (0.85 -> 0.4), everything else unchanged
+   (`BAODING_GRASP_TARGET_LARGE_CROSSOVER`). Re-measured with the per-ball metric over 20-50
+   cycles: ball2_cum reaches **-172 degrees** and ball1_cum **-64 degrees**, both balls retained,
+   separation rock-stable at ~0.039m -- the two balls now carry genuinely different amounts of
+   rotation (not a rigid pair spinning together), which is what "pass by each other" actually
+   requires, instead of the previous -11/-60 split that was mostly just ball1 wobbling alone.
 
    <p align="center">
      <img src="media/stage6_four_finger_orbit.gif" width="360">
    </p>
-   <p align="center"><sub>Current best scripted result: `four_finger_orbit_ctrl` with
-   curl_frac=0.72 thumb -- -55.8 degrees, rock-stable, balls visibly migrate from side-by-side to
-   stacked over the palm center.</sub></p>
+   <p align="center"><sub>Current best scripted result: `four_finger_orbit_ctrl` +
+   `BAODING_GRASP_TARGET_LARGE_CROSSOVER` (mf curl loosened 0.85 -> 0.4) -- ball1 -64 degrees,
+   ball2 -172 degrees, both retained, measured per-ball (not pair-vector) this time.</sub></p>
 
 ## Repository layout
 
@@ -731,6 +768,7 @@ allegro_hand/
 │   ├── stage6_diagonal_stroke.gif
 │   ├── stage6_four_finger_orbit_v1.gif
 │   ├── stage6_four_finger_orbit_v2.gif
+│   ├── stage6_four_finger_orbit_v3.gif
 │   ├── stage6_four_finger_orbit.gif
 │   └── stage6_four_finger_ratchet.gif
 └── README.md

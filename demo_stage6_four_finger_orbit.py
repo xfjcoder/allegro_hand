@@ -2,13 +2,15 @@
 user's observation on the diagonal_stroke_ctrl GIF: "middle finger and thumb block balls cross
 each other, can 4 fingers work in a coordinate way?"
 
-Default grasp/amplitudes are the "upright thumb" variant
-(`hand_env.BAODING_GRASP_TARGET_LARGE_UPRIGHT_THUMB`), from the user's next observation: "the
-thumb curl all way down, that block the way in hand for balls pass to other side, the thumb
-should be more in upright position". Re-tuning the thumb's curl_frac (0.85 -> 0.75) and
-re-sweeping amp_lat/amp_curl for that geometry found amp_lat=0.35/amp_curl=0.12 converges to
--54.6 degrees, rock-stable, an 18% improvement over the fully-curled thumb's -46.6 degree
-ceiling. Pass `--grasp original` to render the fully-curled-thumb version instead.
+Default grasp/amplitudes are the "crossover" variant
+(`hand_env.BAODING_GRASP_TARGET_LARGE_CROSSOVER`), from the user's next observation: "finger are
+moving, but not in a way to push balls pass cross each other, the thumb only hold on the ball,
+instead to move balls around". A per-ball (not pair-vector) angle metric plus a body-name-correct
+contact audit found ball2 was nearly pinned in a persistent 3-digit (mf+rf+thumb) pocket the whole
+cycle; loosening mf's static grasp curl (0.85 -> 0.4) unlocked real circulation -- ball2_cum
+reaches -172 degrees and ball1_cum -64 degrees over 20+ cycles, both retained, instead of the
+previous -11/-60 split that was mostly just ball1 wobbling. Pass `--grasp upright_thumb` or
+`--grasp original` to render the earlier results instead.
 
 Usage:
     python3 demo_stage6_four_finger_orbit.py --record media/stage6_four_finger_orbit.gif
@@ -20,10 +22,11 @@ import mujoco as mj
 import numpy as np
 from PIL import Image
 
-from hand_env import (BAODING_GRASP_TARGET_LARGE, BAODING_GRASP_TARGET_LARGE_UPRIGHT_THUMB,
-                       BALL_REST_POS_LARGE, MAX_BALL_SEPARATION_LARGE, MIN_BALL_SEPARATION_LARGE,
-                       TWO_BALL_SCENE_LARGE, ball_pair_angle_rad, ball_separation_ok,
-                       balls_retained, four_finger_orbit_ctrl, ramp_to_target, settle_object)
+from hand_env import (BAODING_GRASP_TARGET_LARGE, BAODING_GRASP_TARGET_LARGE_CROSSOVER,
+                       BAODING_GRASP_TARGET_LARGE_UPRIGHT_THUMB, BALL_REST_POS_LARGE,
+                       MAX_BALL_SEPARATION_LARGE, MIN_BALL_SEPARATION_LARGE, TWO_BALL_SCENE_LARGE,
+                       ball_pair_angle_rad, ball_separation_ok, balls_retained,
+                       four_finger_orbit_ctrl, ramp_to_target, settle_object)
 
 
 def _wrap(a):
@@ -33,19 +36,21 @@ def _wrap(a):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--scene", type=str, default=TWO_BALL_SCENE_LARGE)
-    ap.add_argument("--grasp", choices=("upright_thumb", "original"), default="upright_thumb")
+    ap.add_argument("--grasp", choices=("crossover", "upright_thumb", "original"),
+                     default="crossover")
     ap.add_argument("--amp-lat", type=float, default=0.4)
     ap.add_argument("--amp-curl", type=float, default=0.15)
-    ap.add_argument("--thumb-amp-base", type=float, default=0.0)
-    ap.add_argument("--thumb-amp-curl", type=float, default=0.0)
-    ap.add_argument("--cycles", type=int, default=15)
+    ap.add_argument("--thumb-amp-base", type=float, default=0.3)
+    ap.add_argument("--thumb-amp-curl", type=float, default=0.25)
+    ap.add_argument("--cycles", type=int, default=20)
     ap.add_argument("--cycle-seconds", type=float, default=2.0)
     ap.add_argument("--record", type=str, default=None)
     ap.add_argument("--frame-stride", type=int, default=30)
     args = ap.parse_args()
 
-    grasp_target = (BAODING_GRASP_TARGET_LARGE_UPRIGHT_THUMB if args.grasp == "upright_thumb"
-                     else BAODING_GRASP_TARGET_LARGE)
+    grasp_target = {"crossover": BAODING_GRASP_TARGET_LARGE_CROSSOVER,
+                     "upright_thumb": BAODING_GRASP_TARGET_LARGE_UPRIGHT_THUMB,
+                     "original": BAODING_GRASP_TARGET_LARGE}[args.grasp]
     model = mj.MjModel.from_xml_path(args.scene)
     data = mj.MjData(model)
     mj.mj_forward(model, data)
@@ -79,9 +84,16 @@ def main():
         step_n(start + alpha * (grasp_target - start), 1)
     step_n(grasp_target, int(0.3 / dt))
 
+    palm_center = np.array([0.0, 0.0, 0.035])
+
+    def ball_angle(name):
+        p = data.body(name).xpos
+        return np.arctan2(p[1] - palm_center[1], p[0] - palm_center[0])
+
     n_steps = int(args.cycle_seconds / dt)
     angle_prev = ball_pair_angle_rad(data)
-    cum = 0.0
+    b1_prev, b2_prev = ball_angle("ball1"), ball_angle("ball2")
+    cum = cum1 = cum2 = 0.0
     for cyc in range(args.cycles):
         for t in range(n_steps):
             phase = (t / n_steps) * 2 * np.pi
@@ -91,10 +103,14 @@ def main():
         angle_cur = ball_pair_angle_rad(data)
         cum += _wrap(angle_cur - angle_prev)
         angle_prev = angle_cur
+        b1_cur, b2_cur = ball_angle("ball1"), ball_angle("ball2")
+        cum1 += _wrap(b1_cur - b1_prev)
+        cum2 += _wrap(b2_cur - b2_prev)
+        b1_prev, b2_prev = b1_cur, b2_cur
         retained, _ = balls_retained(data, rest_pos=BALL_REST_POS_LARGE)
         _, sep = ball_separation_ok(data, MIN_BALL_SEPARATION_LARGE, MAX_BALL_SEPARATION_LARGE)
-        print(f"cycle {cyc}: cum_orbit={np.degrees(cum):.1f}deg retained={retained} "
-              f"sep={sep:.4f}")
+        print(f"cycle {cyc}: pair_cum={np.degrees(cum):.1f}deg ball1_cum={np.degrees(cum1):.1f}"
+              f"deg ball2_cum={np.degrees(cum2):.1f}deg retained={retained} sep={sep:.4f}")
         if not retained:
             break
 
@@ -102,7 +118,9 @@ def main():
     if args.record:
         Path(args.record).parent.mkdir(parents=True, exist_ok=True)
         imgs = [Image.fromarray(f) for f in frames]
-        imgs[0].save(args.record, save_all=True, append_images=imgs[1:], duration=40, loop=0)
+        duration_ms = round(args.frame_stride * dt * 1000)
+        imgs[0].save(args.record, save_all=True, append_images=imgs[1:], duration=duration_ms,
+                     loop=0)
         print(f"Saved {len(frames)} frames to {args.record}")
 
     renderer.close()

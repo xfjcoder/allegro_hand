@@ -825,6 +825,94 @@ started after closing out `barrett_wam` (Barrett WAM arm + BarrettHand) and `pan
    most honestly-measured stretch of it produced so far. Each of the 5 rounds fixed one specific,
    diagnosed failure rather than retraining blindly, continuing this stage's established discipline.
 
+   **User, watching the `baoding_v4_05` GIF: "odd finger position, thumb's outside of tip against
+   ball, and middle finger use bottom part to message balls, balls should be inside of all
+   fingers, use mainly inside middle part of finger with help with inside of top finger ... bigger
+   balls should be used so that all finger are used."** Added `hand_env.classify_ball_contacts`,
+   which labels every hand-ball contact by segment AND face (palmar/inside, DORSAL/back, side, end;
+   every phalanx curls about its own local y, so local +x is its palmar face -- checked
+   numerically, thumb included). On `baoding_v4_05` it confirmed every point: `th_tip` touched with
+   its BACK 96% of steps, mf's contact was almost all `mf_proximal`/`mf_base`, palmar-medial contact
+   was rare on every digit. V4's `touching_digits` counted a digit as engaged no matter which face
+   touched, so its whole engagement mechanism had been satisfied by exactly the posture the user
+   objected to.
+
+   Built a 60mm-ball scene (`scene_two_balls_xl.xml`) and `BaodingEnvV5` (`rl_env_baoding_v5.py`:
+   engagement counts only palmar medial/distal/tip contact; per-step penalties for back-of-finger
+   and finger-root contact; retention measured radially from the palm center, since with 60mm balls
+   a genuine swap moves each ball ~7cm -- further than V2-V4's "within 5cm of your own start" check
+   allowed). The starting grasp went through three rounds of the user's review, each found by a
+   static search over ball placement x per-digit curl x thumb pose, scored on contact face:
+
+   - **Cage** (`BAODING_GRASP_TARGET_XL_CAGE`, `media/stage6_grasp_xl_v1.png`): all four digits
+     palmar-side on the balls, zero back-of-finger contact -- but the three fingers stacked into a
+     roof over the balls. User: "ff, mf and rf can be spaced away more, so they are formed bowl
+     shape." (A first search here had built the balls with `MjSpec` `geom.mass = 0`, which made them
+     weightless rather than density-derived; caught when the scene file didn't reproduce it.)
+   - **Fanned** (`BAODING_GRASP_TARGET_XL`, `media/stage6_grasp_xl_v2.png`): first attempt at spacing them looked identical,
+     and the reason was a real model finding -- ff/mf/rf's j0 ("base") joint ROLLS the finger about
+     its own length, it isn't palm-plane abduction: a straight finger doesn't move at all, a curled
+     one swings sideways, and in the `make_grasp_target(base_spread=...)` sign convention every
+     earlier stage used (ff gets -spread, rf +spread), a positive spread tilts BOTH curled
+     fingers INWARD toward mf (checked for ff and rf separately). With the sign corrected, fingertips
+     went from 5.9cm to 13.1cm apart. User: "not like bowl at all, balls can partially sit on bottom
+     part of fingers if balls are big, top of 4 fingers should be on balls" and "two balls should
+     sit against each other in palm also."
+   - **Cup** (`BAODING_GRASP_TARGET_XL_CUP` + `BALL_SPAWN_XL_CUP`, `media/stage6_grasp_xl.png`;
+     `BAODING_GRASP_TARGET_XL`, what `BaodingEnvV5` starts from, is the fanned one): finger bottoms nearly flat as the floor of the cup, balls side by
+     side and touching, resting partly on the finger bottoms, all four fingertip pads on the balls,
+     no back-of-finger contact; holds 10s motionless before two pads slowly slide off.
+
+   **Stopped here, by the user's call**: "4 fingers hand probably not good for baoding trick, let's
+   find a good trick, maybe toss a ball and catch it." No RL policy was trained from the cup grasp.
+   Across this stage, every method -- scripted (diagonal stroke, four-finger orbit, ratchet,
+   leapfrog) and learned (V1-V4) -- either never genuinely crossed the balls or did so only partway
+   before stalling or drifting; the closest to the real thing was `baoding_v4_05`, with the
+   wrong finger faces doing the work.
+
+7. **Stage 7: toss and catch -- DONE (project closed).** One 50mm/33g ball (`scene_toss.xml`).
+   `hand_env.TossCatchController` is a scripted cycle driven by the ball's own state, not a clock:
+   HOLD cupped -> PREP fingers flat (so the fingertips don't block the throw) -> FLICK, the three
+   proximal joints snap up for ~36ms -> FLIGHT, open flat hand under the ball -> CATCH, the
+   medial/distal curl into a cup as soon as the ball is falling and back within 1.8cm of where it
+   was thrown from -> HOLD. A first sweep showed the proximals are a natural launcher: a 40-80ms
+   snap throws the ball up to ~8cm and it lands back on the same spot; holding the snap ~0.15s
+   instead rolls it backward off the palm.
+
+   The 12 controller parameters (flick strength/duration, timings, catch height, cup shape, thumb
+   pose) were found by a 3k random + 1.3k refinement search, scored on consecutive successful
+   cycles (the ball must actually rise 2cm and end up resting in the hand). 18 sets hit the
+   20-cycle cap, so the 40 best were stress-tested at up to 100 cycles x 11 conditions (9 starting
+   ball offsets +-8mm, ball mass x0.8 / x1.2): four were perfect. The obvious pick was the middle of
+   a cluster of three tossing 10.7-13.5cm, but just rounding its parameters to 3 decimals dropped it
+   to 1003/1100 -- so all four were re-run under small random parameter perturbations (1% of each
+   range, 7 variants each). The high-toss cluster is fragile (worst variants 356, 387 and 45 of 1100);
+   the one kept is not (worst 1030/1100, 4 of 7 variants still perfect), at a lower toss.
+
+   **Result** (`eval_stage7_toss_catch.py --cycles 100`): **1100/1100 toss+catch cycles** across
+   all 11 conditions with no miss, toss height 8.9cm (8.2-9.9cm) at the nominal mass, 10.4cm at
+   x0.8, 7.8cm at x1.2. **Caveat**: peak commanded actuator torque is 1.5 N*m -- the vendored model
+   has no torque limit, so check that against the real hand's spec before assuming this transfers.
+
+   <p align="center">
+     <img src="media/stage7_toss_catch.gif" width="640">
+   </p>
+   <p align="center"><sub>Stage 7: toss and catch, side view (left) and from above the palm
+   (right). Real-time playback; 5 cycles in 8 seconds, tosses 8.8-9.9cm.</sub></p>
+
+## Project status: closed
+
+Closed after Stage 7 at the user's call. Stages 1-5 (kinematics, stable grasp, reorientation,
+finger gaiting, RL gaiting) and Stage 7 (toss and catch) reached their goals. Stage 6 (baoding)
+didn't: no method got the two balls to cross over and keep circulating with the fingers'
+inside faces doing the work, and the final grasp exploration ended without an RL run. Findings
+worth carrying to any follow-up on this hand model: j0 is a finger ROLL, not palm-plane
+abduction (and earlier stages' `base_spread` sign tilts ff/rf inward when curled); a contact
+count can't tell which face of a finger is touching, so check with `classify_ball_contacts`
+before trusting any "all digits engaged" number; and a stress test that passes at full
+parameter precision can still be a knife-edge -- perturb the parameters, not just the
+conditions.
+
 ## Repository layout
 
 ```
@@ -833,6 +921,8 @@ allegro_hand/
 │   ├── right_hand.xml, scene_right.xml   # vendored from mujoco_menagerie, see NOTICE.md
 │   ├── scene_two_balls.xml               # Stage 6: right_hand.xml + two spheres, item 6
 │   ├── scene_two_balls_large.xml         # Stage 6: larger-ball variant, item 6
+│   ├── scene_two_balls_xl.xml            # Stage 6: 60mm-ball variant (claw/cup grasps), item 6
+│   ├── scene_toss.xml                    # Stage 7: one 50mm ball for toss and catch, item 7
 │   ├── assets/                           # meshes the above MJCF references
 │   ├── LICENSE.wonik_allegro
 │   ├── CHANGELOG.wonik_allegro.md
@@ -879,6 +969,12 @@ allegro_hand/
 ├── train_stage6_baoding_rl_v4.py          # Stage 6: PPO training script (v4), item 6
 ├── eval_stage6_baoding_rl_v4.py           # Stage 6: v4 rollout eval, item 6
 ├── demo_stage6_baoding_rl_v4.py           # Stage 6: v4 rollout GIF, item 6
+├── rl_env_baoding_v5.py                   # Stage 6: BaodingEnvV5 (60mm balls, contact-face reward; not trained), item 6
+├── train_stage6_baoding_rl_v5.py          # Stage 6: PPO training script (v5), item 6
+├── eval_stage6_baoding_rl_v5.py           # Stage 6: v5 rollout eval, item 6
+├── demo_stage6_baoding_rl_v5.py           # Stage 6: v5 rollout GIF, item 6
+├── eval_stage7_toss_catch.py              # Stage 7: toss-and-catch stress test, item 7
+├── demo_stage7_toss_catch.py              # Stage 7: toss-and-catch GIF, item 7
 ├── media/
 │   ├── stage1_kinematic_sweep.gif
 │   ├── stage2_grasp_stability.gif
@@ -898,6 +994,10 @@ allegro_hand/
 │   ├── stage6_four_finger_orbit.gif
 │   ├── stage6_four_finger_ratchet.gif
 │   ├── stage6_baoding_rl_v3.gif
-│   └── stage6_baoding_rl_v4.gif
+│   ├── stage6_baoding_rl_v4.gif
+│   ├── stage6_grasp_xl_v1.png              # 60mm cage grasp
+│   ├── stage6_grasp_xl_v2.png              # 60mm fanned grasp
+│   ├── stage6_grasp_xl.png                 # 60mm cup grasp
+│   └── stage7_toss_catch.gif
 └── README.md
 ```

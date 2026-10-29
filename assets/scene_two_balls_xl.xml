@@ -1,0 +1,47 @@
+<mujoco model="right_allegro_hand scene (two XL balls)">
+  <include file="right_hand.xml"/>
+
+  <visual>
+    <rgba haze="0.15 0.25 0.35 1"/>
+    <quality shadowsize="8192"/>
+    <global azimuth="130" elevation="-40"/>
+  </visual>
+
+  <asset>
+    <texture type="skybox" builtin="gradient" rgb1="0.3 0.5 0.7" rgb2="0 0 0" width="512" height="3072"/>
+    <texture type="2d" name="groundplane" builtin="checker" mark="edge" rgb1="0.2 0.3 0.4" rgb2="0.1 0.2 0.3"
+      markrgb="0.8 0.8 0.8" width="300" height="300"/>
+    <material name="groundplane" texture="groundplane" texuniform="true" texrepeat="5 5" reflectance="0.2"/>
+  </asset>
+
+  <worldbody>
+    <light pos="0 0 1"/>
+    <light pos="0.3 0 1.5" dir="0 0 -1" directional="true"/>
+    <geom name="floor" pos="0 0 -0.1" size="0 0 0.05" type="plane" material="groundplane"/>
+    <!-- Stage 6 continued: user, watching the BaodingEnvV4 GIF -- "thumb's outside of tip against
+         ball, and middle finger use bottom part to message balls, balls should be inside of all
+         fingers, use mainly inside middle part of finger with help with inside of top finger ...
+         bigger balls should be used so that all finger are used". 0.03m radius (60mm, up from
+         scene_two_balls_large.xml's 0.02m), density 600 (~68g each -- the position actuators
+         are kp=1, so real-baoding-steel density would just sag the fingers open). Spawned
+         resting on the palm at the finger roots (x=0.002, set by hand_env.place_balls) rather
+         than dropped from [0,0,0.1] like the smaller scenes. A static grasp search over ball
+         size x finger curl x thumb pose, scored on PALMAR (inside-face) contact on each digit's
+         medial/distal/tip, found this size the only one tested (0.025/0.0275/0.03) where all
+         four digits (thumb included) hold the pair from the inside -- see
+         hand_env.BAODING_GRASP_TARGET_XL. Separate file so every earlier scene's numbers stay
+         reproducible. -->
+    <body name="ball1" pos="0.002 -0.0305 0.043">
+      <freejoint/>
+      <geom type="sphere" size="0.005" pos="0.026 0 0" rgba="1 1 1 1" contype="0" conaffinity="0"/>
+      <geom type="sphere" size="0.03" density="600" rgba="0.8 0.3 0.3 1" condim="6" priority="1"
+        friction="0.7 0.002 0.002"/>
+    </body>
+    <body name="ball2" pos="0.002 0.0305 0.043">
+      <freejoint/>
+      <geom type="sphere" size="0.005" pos="0.026 0 0" rgba="1 1 1 1" contype="0" conaffinity="0"/>
+      <geom type="sphere" size="0.03" density="600" rgba="0.3 0.3 0.8 1" condim="6" priority="1"
+        friction="0.7 0.002 0.002"/>
+    </body>
+  </worldbody>
+</mujoco>

@@ -627,3 +627,264 @@ def leapfrog_half_cycle(model, data, base_ctrl, release_slice, push_idx, release
     data.ctrl[:] = base_ctrl
     for _ in range(int(hold_seconds / dt)):
         mj.mj_step(model, data)
+
+
+# Stage 6 continued: user, watching the BaodingEnvV4 GIF -- "thumb's outside of tip against ball,
+# and middle finger use bottom part to message balls, balls should be inside of all fingers, use
+# mainly inside middle part of finger with help with inside of top finger to manuevar balls to
+# cross each other, bigger balls should be used so that all finger are used in the baoding trick".
+# Classifying every v4_05 contact by segment AND face confirmed it: th_tip touched with its BACK
+# 96% of steps (th_distal back 78%), mf's contact was almost all `mf_proximal`/`mf_base`, and
+# palmar medial contact was rare on every digit -- `touching_digits` counts a digit as engaged no
+# matter which face or segment touches, so it couldn't see any of this.
+TWO_BALL_SCENE_XL = "assets/scene_two_balls_xl.xml"
+BALL_RADIUS_XL = 0.03
+BALL_SPAWN_XL = {"ball1": np.array([0.002, -0.0305, 0.043]),
+                 "ball2": np.array([0.002, 0.0305, 0.043])}
+BALL_SPAWN_XL_CAGE = {"ball1": np.array([-0.011, -0.0305, 0.043]),
+                      "ball2": np.array([-0.011, 0.0305, 0.043])}
+# Static search over ball radius (0.025/0.0275/0.03), ball placement along the palm, ff/rf spread,
+# ff/rf and mf proximal/medial/distal curl, and all 4 thumb joints: 24k uniform random samples plus
+# 7.2k local refinements around the best 24, each scored on the average of 6 snapshots over the
+# last second of a 3s hold (not one instant -- contacts flicker while a grasp settles). Score per
+# snapshot: +1 per digit with GOOD contact (`contact_quality`), +0.5 per digit with palmar MEDIAL
+# contact, -1 per DORSAL contact, -0.25 per proximal/base contact. (An earlier grid search gave
+# a different answer, but it had built the balls with `MjSpec` setting `geom.mass = 0`, which
+# made them weightless rather than density-derived -- caught when the scene file didn't
+# reproduce it, discarded.) A tight cluster of near-identical configs at 0.03m tops it: all 4
+# digits good, zero dorsal, zero root contact. ff/rf touch with the inside of their medial and
+# their tip pads, mf (over the seam between the balls) with the inside of its distal, the thumb
+# with its tip pad, curled over ball1 from the side. 0.0275m ties on score; 0.03 kept (the user
+# asked for bigger balls, and more of each finger's length wraps a bigger ball).
+#
+# Superseded by BAODING_GRASP_TARGET_XL below -- kept so media/stage6_grasp_xl_v1.png reproduces.
+# User, on its image: "ff, mf and rf can be spaced away more, so they are formed bowl shape to
+# hold two balls in palm." The three fingers here are stacked side by side into a roof over the
+# balls (ff-rf fingertips only 5.9cm apart), not a bowl.
+BAODING_GRASP_TARGET_XL_CAGE = np.array([
+    -0.256, 1.487, 1.295, 0.197,   # ff
+    0.0, 1.607, 1.478, 1.511,      # mf
+    0.256, 1.487, 1.295, 0.197,    # rf
+    1.313, 0.288, 1.106, 1.339,    # th
+])
+
+# The fix needed a correction to how j0 (the "base" joint, ff/mf/rf) was being used. It rolls each
+# finger about its OWN length axis (world ~+x), not about the palm normal: a straight finger
+# doesn't move at all, a curled one swings sideways. Checked: ffj0=-0.41 moves the curled ff tip
+# 2.7cm TOWARD mf. So the CAGE grasp's "spread" (ff negative, rf positive, the
+# `make_grasp_target(base_spread=...)` convention every earlier stage used) had been tilting ff/rf
+# INWARD; an earlier "wider spread" search in that same convention got a higher contact score
+# but looked identical (fingertips still 5.9cm apart). Fanning OUTWARD is ff j0 POSITIVE, rf j0
+# NEGATIVE. Re-ran the 16k+5k joint search in that convention, same score: best at +-0.26 --
+# fingertips 13.1cm apart (2.2x the cage), ff/rf standing on the OUTER sides of the two balls
+# (fingertip ends pressing in), mf curled down into the seam between them with its palmar medial,
+# the thumb wrapping ball1 with its palmar medial+distal, both balls sitting open in the palm.
+# Low proximal curl (0.51 vs the cage's 1.49): ff/rf rise from the palm at an angle like bowl
+# walls instead of folding flat over the top. All 4 digits keep good contact through a full 20s
+# motionless hold (the cage drops to 3 after 5s), zero dorsal contact. Forcing +-0.40 instead
+# (fingertips 14.5cm) loses ff's contact -- 3 good digits falling to 1 over 20s -- so +-0.26 is
+# about as wide as this hand can fan while still touching both 60mm balls.
+BAODING_GRASP_TARGET_XL = np.array([
+    0.264, 0.509, 1.66, 1.618,     # ff: j0 fans OUTWARD (positive), proximal, medial, distal
+    0.0, 1.609, 1.51, 0.188,       # mf: curled deep into the seam between the balls
+    -0.264, 0.509, 1.66, 1.618,    # rf: j0 fans OUTWARD (negative)
+    1.275, 0.046, 1.574, 1.282,    # th: base rotation, proximal, medial, distal
+])
+
+# Last grasp of Stage 6, after the user on the fanned grasp above: "not like bowl at all, balls can
+# partially sit on bottom part of fingers if balls are big, top of 4 fingers should be on balls" and
+# "two balls should sit against each other in palm also". Search (20k random + 6k refined) scored on
+# fingertip/distal pad on a ball for each digit, +0.25 per digit whose proximal holds a ball from
+# underneath, -1 per back-of-finger contact, -2 whenever the balls aren't touching. Finger bottoms
+# nearly flat (0.09) as the floor of the cup, balls side by side and touching out over them, all
+# four fingertip pads on the balls, zero back-of-finger contact. Motionless, all four pads stay on
+# for 10s, then two slowly slide off (the balls stay touching the whole 20s). Image:
+# media/stage6_grasp_xl.png. No RL was trained from it -- the user moved on to Stage 7 here.
+BALL_SPAWN_XL_CUP = {"ball1": np.array([0.0246, -0.0305, 0.043]),
+                     "ball2": np.array([0.0246, 0.0305, 0.043])}
+BAODING_GRASP_TARGET_XL_CUP = np.array([
+    -0.005, 0.094, 1.241, 1.230,   # ff
+    0.0, 0.398, 1.145, 1.149,      # mf
+    0.005, 0.094, 1.241, 1.230,    # rf
+    0.841, 0.428, 1.180, 1.106,    # th
+])
+
+
+def place_balls(model, data, spawn):
+    """Sets each ball's free joint to `spawn[name]` (identity orientation, zero velocity) -- used
+    instead of `settle_object`'s drop-from-[0,0,0.1] for the XL scene, whose balls must start
+    resting in the palm (behind the finger roots) for the claw grasp to close over them."""
+    for name, p in spawn.items():
+        jnt = model.body(name).jntadr[0]
+        qadr, vadr = model.jnt_qposadr[jnt], model.jnt_dofadr[jnt]
+        data.qpos[qadr:qadr + 3] = p
+        data.qpos[qadr + 3:qadr + 7] = [1, 0, 0, 0]
+        data.qvel[vadr:vadr + 6] = 0.0
+    mj.mj_forward(model, data)
+
+
+def classify_ball_contacts(model, data, ball):
+    """Set of (hand_body_name, face) for every hand geom touching `ball`, where face is "palmar"
+    (inside), "DORSAL" (back), "side", or "end" (fingertip cap / segment end). Every phalanx curls
+    about its own local y axis with positive flexion swinging the tip toward local +x (checked
+    numerically for both a finger and the thumb), so local +x IS the palmar direction for every
+    segment. Face = the dominant axis of the contact point's offset from the geom's own center
+    line, box offsets normalized by the box's half-sizes."""
+    ball_id = model.body(ball).id
+    out = set()
+    for i in range(data.ncon):
+        c = data.contact[i]
+        b1, b2 = model.geom_bodyid[c.geom1], model.geom_bodyid[c.geom2]
+        if ball_id not in (b1, b2):
+            continue
+        g = c.geom2 if b1 == ball_id else c.geom1
+        name = model.body(model.geom_bodyid[g]).name
+        if not name.startswith(DIGIT_PREFIXES) and name != "palm":
+            continue
+        if name == "palm":
+            out.add(("palm", "palm"))
+            continue
+        p = data.geom_xmat[g].reshape(3, 3).T @ (c.pos - data.geom_xpos[g])
+        if model.geom_type[g] == mj.mjtGeom.mjGEOM_CAPSULE:
+            half = model.geom_size[g][1]
+            v = p - np.array([0.0, 0.0, half]) if p[2] > half else np.array([p[0], p[1], 0.0])
+        else:
+            v = p / model.geom_size[g][:3]
+        axis = int(np.argmax(np.abs(v)))
+        out.add((name, ("palmar" if v[0] > 0 else "DORSAL") if axis == 0 else
+                 ("side" if axis == 1 else "end")))
+    return out
+
+
+GOOD_SEGMENTS = ("medial", "distal", "tip")
+
+
+def contact_quality(model, data, balls=("ball1", "ball2")):
+    """Per-step contact summary for the XL claw: `good_digits` = digits touching either ball with
+    the palmar face (or fingertip end cap) of their medial/distal/tip -- the "inside middle part
+    with help from the inside of the top" the user asked for; `medial_digits` = the subset touching
+    with the palmar face of the medial specifically (the "mainly" part); `n_dorsal` = segments
+    touching with their back; `n_root` = proximal/base segments touching at all (allowed, not
+    wanted)."""
+    contacts = set()
+    for b in balls:
+        contacts |= classify_ball_contacts(model, data, b)
+    good, medial, n_dorsal, n_root = set(), set(), 0, 0
+    for name, face in contacts:
+        if name == "palm":
+            continue
+        digit, seg = name[:3], name[3:]
+        if face == "DORSAL":
+            n_dorsal += 1
+        elif seg in ("proximal", "base"):
+            n_root += 1
+        elif seg in GOOD_SEGMENTS and (face == "palmar" or (seg == "tip" and face == "end")):
+            good.add(digit)
+            if seg == "medial":
+                medial.add(digit)
+    return good, medial, n_dorsal, n_root
+
+
+# Stage 7: toss and catch. User, after the Stage 6 baoding work: "4 fingers hand probably not good
+# for baoding trick, let's find a good trick, maybe toss a ball and catch it? for 4 finger hand and
+# close the project". One 50mm/33g ball resting on the finger bottoms (scene_toss.xml). The fingers'
+# proximal joints make a natural launcher: snapping them up 40-80ms throws the ball up to ~8cm
+# and it comes down on the same spot (snapping longer than ~0.15s rolls it backward off the palm
+# instead). Medial/distal curl makes the catching cup.
+TOSS_SCENE = "assets/scene_toss.xml"
+TOSS_BALL_RADIUS = 0.025
+TOSS_SPAWN = {"ball": np.array([0.05, 0.0, 0.0098 + TOSS_BALL_RADIUS + 0.001])}
+TOSS_CURL = (1, 5, 9)          # ff/mf/rf proximal actuators: the launcher
+TOSS_FINGER_CUP = (2, 3, 6, 7, 10, 11)  # ff/mf/rf medial+distal: the cup
+
+
+class TossCatchController:
+    """Scripted toss-and-catch cycle, driven by the ball's own state (not a fixed clock):
+    HOLD (cupped, ball settles) -> PREP (fingers flat, so fingertips don't block the throw) ->
+    FLICK (proximal joints snap to `flick_amp` for `flick_time`) -> FLIGHT (flat open hand under
+    the ball) -> CATCH as soon as the ball is FALLING and back within `catch_height` of where it
+    was thrown from -> HOLD again. A cycle counts only if the ball actually rose `min_apex` and
+    ended up resting in the hand; FLIGHT longer than `max_flight` is a miss."""
+
+    def __init__(self, flick_amp=1.0, flick_time=0.05, prep_time=0.25, hold_time=0.6,
+                 catch_height=0.01, cup_curl=(0.7, 0.7), cup_proximal=0.0, thumb=(0.263, 0.0, 0.0, 0.0),
+                 min_apex=0.02, max_flight=1.5):
+        self.flick_amp, self.flick_time, self.prep_time, self.hold_time = flick_amp, flick_time, prep_time, hold_time
+        self.catch_height, self.min_apex, self.max_flight = catch_height, min_apex, max_flight
+        self.flat = np.zeros(N_FINGER_JOINTS)
+        self.flat[12:16] = thumb
+        self.cup = self.flat.copy()
+        for i in TOSS_CURL:
+            self.cup[i] = cup_proximal
+        for k, i in enumerate(TOSS_FINGER_CUP):
+            self.cup[i] = cup_curl[k % 2]
+        self.reset()
+
+    def reset(self):
+        self.phase, self.t_phase = "HOLD", 0.0
+        self.z_release, self.apex, self.cycles, self.apexes = None, None, 0, []
+        self.failed = None
+
+    def _go(self, phase):
+        self.phase, self.t_phase = phase, 0.0
+
+    def step(self, data, dt, ball="ball"):
+        """Advance by dt, return the 16-dim ctrl target. Sets `self.failed` (a reason string) on a
+        miss; `self.cycles` counts completed toss+catch cycles."""
+        self.t_phase += dt
+        z = data.body(ball).xpos[2]
+        vz = data.qvel[data.model.jnt_dofadr[data.model.body(ball).jntadr[0]] + 2]
+        if self.phase == "HOLD":
+            if self.t_phase >= self.hold_time:
+                if self.z_release is not None:  # a catch just finished settling: judge it
+                    x, y = data.body(ball).xpos[:2]
+                    in_hand = -0.09 < x < 0.11 and abs(y) < 0.06 and z > 0.02 and abs(vz) < 0.05
+                    if self.apex - self.z_release < self.min_apex:
+                        self.failed = f"toss too low ({(self.apex - self.z_release) * 100:.1f}cm)"
+                    elif not in_hand:
+                        self.failed = "dropped"
+                    else:
+                        self.cycles += 1
+                        self.apexes.append(self.apex - self.z_release)
+                self._go("PREP")
+            return self.cup
+        if self.phase == "PREP":
+            if self.t_phase >= self.prep_time:
+                self.z_release, self.apex = z, z
+                self._go("FLICK")
+            return self.flat
+        if self.phase == "FLICK":
+            self.apex = max(self.apex, z)
+            c = self.flat.copy()
+            for i in TOSS_CURL:
+                c[i] = self.flick_amp
+            if self.t_phase >= self.flick_time:
+                self._go("FLIGHT")
+            return c
+        # FLIGHT
+        self.apex = max(self.apex, z)
+        risen = self.apex - self.z_release > 0.005
+        if risen and vz < 0 and z < self.z_release + self.catch_height:
+            self._go("HOLD")
+            return self.cup
+        if self.t_phase > self.max_flight:
+            self.failed = "no catch (ball never came back down near the hand)"
+        return self.flat
+
+
+# Found by a 3k random + 1.3k refinement search over these 12 parameters (score: toss+catch cycles
+# completed in 30s, capped at 20 -- 18 parameter sets hit the cap), then the 40 best stress-tested
+# at up to 100 cycles x 11 conditions (9 starting ball offsets +-8mm in x/y, ball mass x0.8 and
+# x1.2). Four were perfect (1100/1100). The obvious pick looked like the middle of a tight cluster
+# of three of them tossing 10.7-13.5cm -- but merely rounding its parameters to 3 decimals dropped it
+# to 1003/1100, so the four were then re-run with 7 small random parameter perturbations each (1% of
+# each parameter's search range) x the same 11 conditions. The high-toss cluster is fragile under
+# that (worst variants 356, 387, 45 of 1100); this one is not (worst 1030/1100, 4 of 7 variants still
+# perfect), so it's the one kept, at a lower ~9cm toss. Flick: proximals to 1.42rad for 36ms.
+# Cup: medial 1.36, distal 0.84, proximal slightly hyperextended (-0.15) so the finger bottoms tilt
+# the ball back into the palm. Catch closes when the ball is falling and back within 1.8cm of its
+# release height. Peak commanded actuator torque ~1.5 N*m: the vendored model has no torque limit,
+# so check this against the real hand's spec before assuming the motion transfers.
+TOSS_CATCH_PARAMS = dict(flick_amp=1.4197, flick_time=0.0361, prep_time=0.139, hold_time=0.8519,
+                         catch_height=0.0182, cup_curl=(1.3581, 0.8433), cup_proximal=-0.1477,
+                         thumb=(1.1261, 0.8691, 1.4128, 1.4404))

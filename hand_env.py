@@ -277,6 +277,7 @@ def object_retained(data, threshold=0.05):
 
 
 FINGERTIP_BODY_NAMES = ("ff_tip", "mf_tip", "rf_tip", "th_tip")
+DIGIT_PREFIXES = ("ff_", "mf_", "rf_", "th_")
 
 
 def _collision_geom_id(model, body_name):
@@ -306,6 +307,38 @@ def fingertip_contact_count(model, data, object_geom_id=None, object_body_name="
         elif c.geom2 == object_geom_id and c.geom1 in tip_geom_ids:
             touching.add(c.geom1)
     return len(touching)
+
+
+def touching_digits(model, data, object_geom_id=None, object_body_name="object"):
+    """Set of DISTINCT digit prefixes (subset of `DIGIT_PREFIXES`) with ANY of that digit's own
+    body segments (not just its fingertip -- see `fingertip_contact_count` for that stricter
+    version) currently touching `object_body_name`. Added for BaodingEnvV4 after a per-fingertip
+    trace of a trained BaodingEnvV3 policy (user: "finger are moving... only two finger are
+    working on two balls... thumb only hold on the ball") showed `th_tip` touching NEITHER ball
+    for an entire 60s rollout and `mf` only ever showing up as a passive proximal-segment
+    backstop -- `hand_contact_count`'s raw body COUNT can't see this, since palm + 2 active digits
+    alone already clears MIN_HAND_CONTACTS_TOTAL=3 with zero pressure to use the other two. This
+    is keyed on DIGIT IDENTITY specifically so a policy can't satisfy an engagement requirement by
+    reusing the same one or two digits harder."""
+    if object_geom_id is None:
+        object_geom_id = _collision_geom_id(model, object_body_name)
+    digits = set()
+    for i in range(data.ncon):
+        c = data.contact[i]
+        other = None
+        if c.geom1 == object_geom_id:
+            other = c.geom2
+        elif c.geom2 == object_geom_id:
+            other = c.geom1
+        if other is None:
+            continue
+        bname = mj.mj_id2name(model, mj.mjtObj.mjOBJ_BODY, model.geom_bodyid[other])
+        if bname is None:
+            continue
+        for prefix in DIGIT_PREFIXES:
+            if bname.startswith(prefix):
+                digits.add(prefix)
+    return digits
 
 
 def hand_contact_count(model, data, object_body_name):

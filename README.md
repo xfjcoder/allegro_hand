@@ -761,6 +761,70 @@ started after closing out `barrett_wam` (Barrett WAM arm + BarrettHand) and `pan
    hits some version of the same wall, which keeps accumulating as evidence for a real structural
    limit in this hand/ball/grasp combination rather than a reward-engineering gap.
 
+   **User, watching the `baoding_v3_05` GIF: "baoding_rl_v3.gif file show only two finger are
+   working on two balls, idea is that 4 fingers make bowl to claw shape with two balls in it, then
+   four fingers massage two balls cross each other and go around and around, can we design a
+   policy network to do that?"** A per-fingertip contact trace of `baoding_v3_05` (not just
+   `hand_contact_count`'s raw body COUNT, which can't see WHICH bodies) confirmed it exactly: the
+   thumb touched NEITHER ball for an entire 60s rollout, and the middle finger was only ever a
+   passive backstop (`mf_proximal`, 96.5% of steps). The policy had quietly reverted to the
+   ORIGINAL ff/rf-only 2-finger stroke this whole stage's four-finger work was meant to move past
+   -- nothing in BaodingEnvV3's reward or termination required otherwise.
+
+   Built `BaodingEnvV4` (`rl_env_baoding_v4.py`) and `hand_env.touching_digits` (digit-IDENTITY
+   contact, not just a count). Five rounds, each fixing a specific, measured failure:
+
+   - **Two root causes found before any training**: (1) the static starting grasp never actually
+     reached thumb contact -- `BaodingEnvV3.reset()`'s `hold_seconds=0.3` cut off while the thumb
+     was still mid-swing; a static sweep showed it settles into real `th_tip` contact by ~0.5s.
+     Raised to 1.0s. (2) nothing penalized a digit going fully idle. Added a per-digit idle-duration
+     tracker with a grace-gated termination at 3s, plus a small engagement bonus.
+   - **baoding_v4_01**: both fixes confirmed working -- all 4 digits genuinely active (ff=100%,
+     mf=99%, rf=69%, th=97%, vs v3_05's th=0%). Circulation was real and ~10x faster than any V3
+     result (ball1=76deg, ball2=194deg within just 11s) -- but `dist1`/`dist2` drifted outward from
+     step 0 even during correct circulation, failing at t=11s. The margin penalty (tuned for V3's
+     much slower motion, threshold 0.04m) never engaged early enough to resist this faster churn's
+     drift.
+   - **baoding_v4_02** (margin threshold tightened 0.04 -> 0.025): drift fully resolved (dist1/dist2
+     stayed under 0.013m for the entire 26s survived) -- but exposed the OTHER new mechanism
+     instead: the policy settled into a quiet, stable 3-digit hold and let the thumb idle out,
+     terminating at the timeout exactly as designed. The 0.02/step engagement-bonus gap between 3
+     and 4 digits was too weak against the now-larger margin penalty.
+   - **baoding_v4_03** (added a continuous per-digit idle-approach cost, ramping once a digit passes
+     30% of its idle budget): positions AND all 4 digits' contact held for the full 90s eval -- but
+     circulation collapsed to near-zero, opposite-signed wobble. Root cause: `touching_digits` is a
+     pure CONTACT check, not a motion check, so sitting perfectly still with all 4 digits resting on
+     the balls earned the same engagement bonus as active massaging, while carrying none of the
+     risk -- a new, more attractive passive equilibrium than the one V3's `IDLE_PENALTY` was built
+     to prevent. Fixed by gating the engagement bonus on `actively_moving`, same as the orbit reward.
+   - **baoding_v4_04**: first run to survive the full 90s WITHOUT freezing, still 100% digit
+     engagement -- but `matched_cum` (genuine same-direction progress) plateaued around 12-14deg:
+     ball2 moved a lot, ball1 just oscillated, occasionally matching direction then reversing.
+     Stability and digit-engagement were both solved; resumed training from this checkpoint for
+     another 4M steps rather than changing the reward again on an unproven hypothesis.
+   - **baoding_v4_05** (resumed from v4_04): the best result in this stage. A 150-second eval never
+     terminates -- all 4 digits stay engaged throughout, `dist2`/`separation` rise to hover right at
+     the 0.05m cutoff without ever crossing it, and `matched_cum` climbs to 77deg by t=75s then
+     holds in a stable ~70deg band through t=150s, with both balls consistently matching direction
+     (ball1 gently oscillating 2-15deg, ball2 sustaining 50-65deg) rather than the earlier
+     opposite-sign wobble.
+
+   <p align="center">
+     <img src="media/stage6_baoding_rl_v4.gif" width="360">
+   </p>
+   <p align="center"><sub>`baoding_v4_05`: all 4 digits (including the thumb) genuinely engaged
+   throughout, genuine same-direction circulation holding ~70 degrees matched progress, stable for
+   150+ seconds without freezing or drifting to failure.</sub></p>
+
+   **Where this stands**: this is the first result in the whole stage where all three qualities the
+   user actually asked for hold together -- a real 4-finger bowl/claw shape (not 2 fingers with 2
+   idle), genuine cross-ball massaging motion (not one ball wobbling, not opposite-direction
+   drift), and long-term stability (150s+ and counting, not a slow walk to the 0.05m cliff). The
+   `matched_cum` metric settles into a steady ~70deg band rather than continuing to climb
+   indefinitely -- still not proven to be unbounded "forever" circulation, just the longest and
+   most honestly-measured stretch of it produced so far. Each of the 5 rounds fixed one specific,
+   diagnosed failure rather than retraining blindly, continuing this stage's established discipline.
+
 ## Repository layout
 
 ```
@@ -811,6 +875,10 @@ allegro_hand/
 ├── train_stage6_baoding_rl_v3.py          # Stage 6: PPO training script (v3), item 6
 ├── eval_stage6_baoding_rl_v3.py           # Stage 6: v3 rollout eval, item 6
 ├── demo_stage6_baoding_rl_v3.py           # Stage 6: v3 rollout GIF, item 6
+├── rl_env_baoding_v4.py                   # Stage 6: BaodingEnvV4 (digit-engagement + anti-drift fixes), item 6
+├── train_stage6_baoding_rl_v4.py          # Stage 6: PPO training script (v4), item 6
+├── eval_stage6_baoding_rl_v4.py           # Stage 6: v4 rollout eval, item 6
+├── demo_stage6_baoding_rl_v4.py           # Stage 6: v4 rollout GIF, item 6
 ├── media/
 │   ├── stage1_kinematic_sweep.gif
 │   ├── stage2_grasp_stability.gif
@@ -829,6 +897,7 @@ allegro_hand/
 │   ├── stage6_four_finger_orbit_v3.gif
 │   ├── stage6_four_finger_orbit.gif
 │   ├── stage6_four_finger_ratchet.gif
-│   └── stage6_baoding_rl_v3.gif
+│   ├── stage6_baoding_rl_v3.gif
+│   └── stage6_baoding_rl_v4.gif
 └── README.md
 ```
